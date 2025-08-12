@@ -1,0 +1,37 @@
+# routes_readonly.py
+from fastapi import APIRouter, HTTPException
+from os import getenv
+from supabase import create_client, Client
+
+SUPABASE_URL: str = getenv("SUPABASE_URL")
+SUPABASE_KEY: str = getenv("SUPABASE_ANON_KEY")
+
+if not (SUPABASE_URL and SUPABASE_KEY):
+    raise RuntimeError("Set SUPABASE_URL and SUPABASE_ANON_KEY environment variables")
+
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+router = APIRouter(prefix="/v1", tags=["read-only"])
+
+# -------------------------------------------------------------------------
+@router.get("/technicians")
+def list_technicians():
+    data = supabase.table("technicians").select("*").execute()
+    if data.error:
+        raise HTTPException(status_code=500, detail=data.error.message)
+    return data.data
+
+# -------------------------------------------------------------------------
+@router.get("/job_pool")
+def list_job_pool():
+    data = supabase.table("job_pool").select("*").order("due_date").execute()
+    if data.error:
+        raise HTTPException(status_code=500, detail=data.error.message)
+    return data.data
+
+# -------------------------------------------------------------------------
+@router.get("/scheduled_jobs")
+def list_scheduled_jobs():
+    data = supabase.table("scheduled_jobs").select("*").order("start_date").execute()
+    if data.error:
+        raise HTTPException(status_code=500, detail=data.error.message)
+    return data.data

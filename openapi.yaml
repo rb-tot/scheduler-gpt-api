@@ -1,0 +1,100 @@
+
+openapi: 3.0.3
+info:
+  title: SchedulerGPT API
+  version: "1.0.0"
+servers:
+  - url: http://localhost:8000
+paths:
+  /health:
+    get:
+      operationId: health
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+  /schedule/preview:
+    post:
+      operationId: schedule_preview
+      summary: Build a 1-week schedule without saving
+      parameters:
+        - in: header
+          name: X-API-Key
+          schema: { type: string }
+          required: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleRequest'
+      responses:
+        "200":
+          description: OK
+  /schedule/commit:
+    post:
+      operationId: schedule_commit
+      summary: Build and save a 1-week schedule
+      parameters:
+        - in: header
+          name: X-API-Key
+          schema: { type: string }
+          required: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleRequest'
+      responses:
+        "200":
+          description: OK
+  /jobs/search:
+    get:
+      operationId: jobs_search
+      summary: Search unscheduled jobs with optional region/SOW/horizon/radius filters
+      parameters:
+        - in: header
+          name: X-API-Key
+          schema: { type: string }
+          required: false
+        - in: query
+          name: region
+          schema: { type: string }
+        - in: query
+          name: sow
+          schema: { type: string }
+        - in: query
+          name: horizon_days
+          schema: { type: integer }
+        - in: query
+          name: tech_id
+          schema: { type: integer }
+        - in: query
+          name: radius_miles
+          schema: { type: number }
+      responses:
+        "200":
+          description: OK
+components:
+  schemas:
+    ScheduleRequest:
+      type: object
+      properties:
+        tech_id: { type: integer }
+        start_date: { type: string, example: "2025-09-01" }
+        assigned_clusters: { type: array, items: { type: integer } }
+        priority_work_orders: { type: array, items: { type: integer } }
+        horizon_days: { type: integer, default: 21 }
+        target_sow_list: { type: array, items: { type: string } }
+        anchor_week_strategy: { type: string, default: "exhaustive" }
+        allow_in_day_filler: { type: boolean, default: true }
+        fixed_jobs: { type: array, items: { type: object } }
+        weekly_target_hours_min: { type: integer, default: 45 }
+        weekly_target_hours_max: { type: integer, default: 50 }
+        max_drive_minutes: { type: integer, default: 60 }
+        pre_night_day_job_cap: { type: integer, default: 4 }
+        radius_miles_cap: { type: integer, nullable: true, default: 250 }
+        seed_region: { type: string, nullable: true }
+        seed_cluster: { type: integer, nullable: true }
+      required: [tech_id, start_date]
