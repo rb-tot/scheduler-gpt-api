@@ -202,16 +202,26 @@ app.openapi = custom_openapi
 def openapi_gpt(request: Request):
     schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
 
-    # 1) servers with your live HTTPS base
+    # 1) servers: set to your live base URL
     base = str(request.base_url).rstrip("/")
     schema["servers"] = [{"url": base}]
 
-    # 2) security schemes so the tool knows what header to inject
-    comps = schema.setdefault("components", {}).setdefault("securitySchemes", {})
-    comps["ApiKeyAuth"] = {"type": "apiKey", "in": "header", "name": "X-API-Key"}
-    comps["bearerAuth"] = {"type": "http", "scheme": "bearer"}
+    # 2) strip header parameters (Authorization, apikey, X-API-Key) from all ops
+    for _, methods in schema.get("paths", {}).items():
+        for _, op in list(methods.items()):
+            if not isinstance(op, dict):
+                continue
+            params = op.get("parameters", [])
+            op["parameters"] = [p for p in params if p.get("in") != "header"]
+            # also remove any per-operation security to avoid multiple schemes
+            if "security" in op:
+                del op["security"]
 
-    # default to API key; you can switch to Bearer in the builder if you prefer
+    # 3) declare a single security scheme (API key in header)
+    schema.setdefault("components", {})
+    schema["components"]["securitySchemes"] = {
+        "ApiKeyAuth": {"type": "apiKey", "in": "header", "name": "X-API-Key"}
+    }
     schema["security"] = [{"ApiKeyAuth": []}]
 
     return JSONResponse(schema)
