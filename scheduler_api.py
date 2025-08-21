@@ -180,3 +180,17 @@ def jobs_search(
     except Exception as e:
         print("SEARCH ERROR:", traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"search_failed: {e}")
+
+#AI told me to add
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
+    # Add bearer security so GPT can inject Authorization automatically
+    schema.setdefault("components", {}).setdefault("securitySchemes", {})
+    schema["components"]["securitySchemes"]["bearerAuth"] = {"type": "http", "scheme": "bearer"}
+    schema["security"] = [{"bearerAuth": []}]
+    app.openapi_schema = schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
