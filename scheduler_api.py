@@ -7,6 +7,9 @@ from pydantic import BaseModel
 import traceback
 import pandas as pd
 from fastapi.openapi.utils import get_openapi
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
 
 # reuse your scheduler + db helpers
 import scheduler_V4a_fixed as sched
@@ -194,3 +197,22 @@ def custom_openapi():
     return app.openapi_schema
 
 app.openapi = custom_openapi
+
+@app.get("/openapi-gpt.json", include_in_schema=False)
+def openapi_gpt(request: Request):
+    schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
+
+    # 1) servers with your live HTTPS base
+    base = str(request.base_url).rstrip("/")
+    schema["servers"] = [{"url": base}]
+
+    # 2) security schemes so the tool knows what header to inject
+    comps = schema.setdefault("components", {}).setdefault("securitySchemes", {})
+    comps["ApiKeyAuth"] = {"type": "apiKey", "in": "header", "name": "X-API-Key"}
+    comps["bearerAuth"] = {"type": "http", "scheme": "bearer"}
+
+    # default to API key; you can switch to Bearer in the builder if you prefer
+    schema["security"] = [{"ApiKeyAuth": []}]
+
+    return JSONResponse(schema)
+
