@@ -6,7 +6,7 @@ from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 import traceback
 import pandas as pd
-
+from fastapi.openapi.utils import get_openapi
 
 # reuse your scheduler + db helpers
 import scheduler_V4a_fixed as sched
