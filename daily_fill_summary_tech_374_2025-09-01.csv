@@ -1,6 +1,0 @@
-tech_id,date,anchor_hours,filler_hours,total_hours,recovery_day,night_scheduled
-374,2025-09-01,0.0,8.5,11.391324268958446,False,False
-374,2025-09-02,0.0,9.25,11.721254468058087,False,False
-374,2025-09-03,0.0,8.5,11.892586154978849,False,False
-374,2025-09-04,0.0,9.5,11.81902105391917,False,False
-374,2025-09-05,0.0,11.5,11.789310431730582,False,False
