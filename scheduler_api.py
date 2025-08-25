@@ -9,6 +9,10 @@ import pandas as pd
 from fastapi.openapi.utils import get_openapi
 from fastapi import Request
 from fastapi.responses import JSONResponse
+from fastapi import Query
+from datetime import date
+from typing import Optional, List
+from supabase_client import sb_select
 
 
 # reuse your scheduler + db helpers
@@ -183,6 +187,35 @@ def jobs_search(
     except Exception as e:
         print("SEARCH ERROR:", traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"search_failed: {e}")
+
+@app.get("/jobs/pool")
+def jobs_pool(
+    start: date,
+    end: date,
+    states: Optional[str] = Query(None, description="CSV list, e.g. CO,UT,AZ"),
+    statuses: Optional[str] = Query(None, description="CSV list. If omitted or '*', no status filter."),
+    is_night: Optional[bool] = Query(None),
+    limit: int = Query(500, ge=1, le=5000),
+):
+    
+    #Returns all job_pool rows in the due_date window.
+    #No default jp_status filter. GPT can pass statuses if needed.
+    
+    filters: List = [("due_date", "gte", str(start)), ("due_date", "lte", str(end))]
+    if states:
+        filters.append(("state", "in", [s.strip() for s in states.split(",") if s.strip()]))
+    if statuses and statuses.strip() != "*":
+        filters.append(("jp_status", "in", [s.strip() for s in statuses.split(",") if s.strip()]))
+
+    rows = sb_select("job_pool", filters=filters)
+
+    if is_night is not None:
+        rows = [r for r in rows if bool(r.get("is_night")) == is_night]
+
+    if limit:
+        rows = rows[:limit]
+
+    return {"count": len(rows), "jobs": rows}
 
 #AI told me to add
 def custom_openapi():
