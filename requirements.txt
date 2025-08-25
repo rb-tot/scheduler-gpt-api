@@ -1,9 +1,9 @@
 fastapi==0.112.*
 uvicorn[standard]==0.30.*
 pydantic==2.*
-python-dotenv==1.*
+python-dotenv==1.0.1
 httpx==0.27.*
 postgrest==0.16.*
-supabase==2.*
+supabase==2.4.0
 pandas==2.*
 numpy==2.*
