@@ -46,20 +46,63 @@ def get_capacities(tech_ids: Optional[List[int]] = None) -> List[Dict[str, Any]]
     filters = [("id", "in", tech_ids)] if tech_ids else None
     return sb_select("technicians", filters=filters, columns="id,max_daily_hours,max_weekly_hours,night_eligible")
 
-# --- compatibility wrappers expected by scheduler_V4a_fixed.py ---
 import pandas as pd
+from typing import Optional, List, Any
 
-def _to_df(rows):
+def _to_df(rows: Optional[List[dict]]) -> pd.DataFrame:
     return pd.DataFrame(rows or [])
 
-def job_pool_df(due_start, due_end, states=None, statuses=("ready", "pending")):
-    rows = get_job_pool(due_start, due_end, states, statuses)
+def job_pool_df(
+    due_start: Any = None,
+    due_end: Any = None,
+    states: Optional[List[str]] = None,
+    statuses: Any = None  # None or "*" means no status filter
+):
+    #    Old code calls _jp() with no args. Support that by returning all rows.
+   # If dates are provided, filter by due_date window and optional states/statuses.
+    
+    from supabase_client import sb_select  # local import to avoid cycles
+
+    if due_start is None or due_end is None:
+        rows = sb_select("job_pool")  # no filters, full table
+        return _to_df(rows)
+
+    ds = str(due_start)
+    de = str(due_end)
+    filters = [("due_date", "gte", ds), ("due_date", "lte", de)]
+    if states:
+        filters.append(("state", "in", list(states)))
+    if statuses not in (None, "*"):
+        if isinstance(statuses, (list, tuple)):
+            stat_list = list(statuses)
+        else:
+            stat_list = [str(statuses)]
+        filters.append(("jp_status", "in", stat_list))
+    rows = sb_select("job_pool", filters=filters)
     return _to_df(rows)
 
-def eligibility_df(work_orders=None):
-    rows = get_job_eligibility_for_jobs(work_orders)
+def eligibility_df(work_orders: Optional[List[int]] = None):
+    from supabase_client import sb_select
+    filters = [("work_order", "in", list(work_orders))] if work_orders else None
+    rows = sb_select("job_technician_eligibility", filters=filters)
     return _to_df(rows)
 
 def technicians_df(active_only: bool = True):
+    """
+    Return technician DataFrame with legacy column names:
+    - id -> technician_id
+    - home_lat -> home_latitude
+    - home_lng -> home_longitude
+    """
     rows = get_technicians(active_only)
-    return _to_df(rows)
+    df = _to_df(rows)
+
+    rename_map = {
+        "id": "technician_id",
+        "home_lat": "home_latitude",
+        "home_lng": "home_longitude",
+    }
+    for old, new in rename_map.items():
+        if old in df.columns and new not in df.columns:
+            df = df.rename(columns={old: new})
+    return df
