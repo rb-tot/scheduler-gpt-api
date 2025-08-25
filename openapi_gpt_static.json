@@ -1,6 +1,6 @@
 {
   "openapi": "3.1.0",
-  "info": { "title": "SchedulerGPT API", "version": "gpt-static-0.3.0" },
+  "info": { "title": "SchedulerGPT API", "version": "gpt-static-0.3.1" },
   "servers": [{ "url": "https://scheduler-gpt-api.onrender.com" }],
   "components": {
     "securitySchemes": {
