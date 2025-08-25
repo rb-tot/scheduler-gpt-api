@@ -45,3 +45,21 @@ def get_existing_schedule(tech_ids: List[int], start: date, end: date) -> List[D
 def get_capacities(tech_ids: Optional[List[int]] = None) -> List[Dict[str, Any]]:
     filters = [("id", "in", tech_ids)] if tech_ids else None
     return sb_select("technicians", filters=filters, columns="id,max_daily_hours,max_weekly_hours,night_eligible")
+
+# --- compatibility wrappers expected by scheduler_V4a_fixed.py ---
+import pandas as pd
+
+def _to_df(rows):
+    return pd.DataFrame(rows or [])
+
+def job_pool_df(due_start, due_end, states=None, statuses=("ready", "pending")):
+    rows = get_job_pool(due_start, due_end, states, statuses)
+    return _to_df(rows)
+
+def eligibility_df(work_orders=None):
+    rows = get_job_eligibility_for_jobs(work_orders)
+    return _to_df(rows)
+
+def technicians_df(active_only: bool = True):
+    rows = get_technicians(active_only)
+    return _to_df(rows)
