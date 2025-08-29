@@ -531,11 +531,8 @@ def assign_technician(tech_id, start_date,
                 'due_date':           job_pool_df.loc[job_pool_df['work_order'] == job['work_order'], 'due_date'].values[0]
             })
 
-    if commit:
-        # write to Supabase via db_writes (lazy import to avoid hard dep)
         try:
             from db_writes import upsert_scheduled_jobs, mark_jobs_scheduled
-            # dedupe this run's rows before writing
             seen, batch = set(), []
             for r in scheduled_jobs_export:
                 wo = int(r["work_order"])
@@ -543,12 +540,10 @@ def assign_technician(tech_id, start_date,
                     continue
                 seen.add(wo)
                 batch.append(r)
-            upsert_scheduled_jobs(batch)
-            mark_jobs_scheduled(list(seen))
+            upsert_scheduled_jobs(batch)          # writes to scheduled_jobs
+            mark_jobs_scheduled(list(seen))       # flips job_pool.jp_status='Scheduled'
         except Exception as e:
-            # surface the error
-            raise
-
+            raise RuntimeError(f"supabase_write_failed: {type(e).__name__}: {e}")
     return schedule
 
 def export_schedule():

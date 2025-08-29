@@ -13,11 +13,21 @@ from fastapi import Query
 from datetime import date
 from typing import Optional, List
 from supabase_client import sb_select
-
-
 # reuse your scheduler + db helpers
 import scheduler_V4a_fixed as sched
 from db_queries import job_pool_df as _jp, technicians_df as _techs
+
+#SchedulerGPT API — aligned with Supabase schema
+#Endpoints:
+#- GET  /health              -> liveness check
+#- GET  /debug/keys          -> see which API keys are loaded
+#- POST /schedule/preview    -> build one-week plan (no writes)
+#- POST /schedule/commit     -> build + write to Supabase (uses db_writes)
+#- GET  /jobs/search         -> find unscheduled jobs with filters
+#- POST /jobs/by_work_orders -> fetch human-readable details for given WOs
+# Notes:
+#- Reads use db_queries.py (live Supabase).
+#- Writes happen inside scheduler_V4a_fixed.assign_technician(commit=True) via db_writes.py.
 
 app = FastAPI(title="SchedulerGPT API", version="1.4.5")
 
@@ -62,7 +72,40 @@ def _parse_date(s: str) -> datetime:
     return datetime.fromisoformat(s)
 
 def _summary(schedule):
-    return {"days": len(schedule), "jobs": sum(len(d["jobs"]) for d in schedule), "schedule": schedule}
+    # enrich jobs from job_pool so responses are human-readable
+    jp = _jp()
+    by_wo = {}
+    if not jp.empty:
+        cols = [c for c in ["work_order","site_name","site_city","site_state","sow_1","due_date","region","jp_priority"] if c in jp.columns]
+        meta = jp[cols].copy()
+        if "due_date" in meta.columns:
+            meta["due_date"] = meta["due_date"].astype(str)
+        by_wo = meta.set_index("work_order").to_dict(orient="index")
+
+    out, total_jobs = [], 0
+    for day in schedule:
+        jobs = []
+        for j in day["jobs"]:
+            m = by_wo.get(int(j["work_order"]), {})
+            jobs.append({
+                "work_order": int(j["work_order"]),
+                "date": str(j["date"].date()),
+                "site_name": m.get("site_name"),
+                "site_city": m.get("site_city"),
+                "site_state": m.get("site_state"),
+                "region": m.get("region"),
+                "sow_1": m.get("sow_1"),
+                "due_date": m.get("due_date"),
+                "jp_priority": m.get("jp_priority"),
+                "travel_time": float(j["travel_time"]),
+                "job_time": float(j["job_time"]),
+                "total_time": float(j["total_time"]),
+                "night_job": bool(j["night_job"]),
+            })
+        total_jobs += len(jobs)
+        out.append({"date": str(day["date"].date()), "total_hours": float(day["total_hours"]), "jobs": jobs})
+    return {"days": len(out), "jobs": total_jobs, "schedule": out}
+
 
 # --- Diagnostics ---
 @app.get("/health")
@@ -138,12 +181,11 @@ def schedule_commit(
             commit=True,
         )
         return _summary(sch)
+    
     except Exception as e:
-        print("COMMIT ERROR:", traceback.format_exc())
-        raise HTTPException(
-            status_code=500,
-            detail=f"commit_failed; service_role_loaded={bool(SUPABASE_SERVICE_ROLE_KEY)}; err={e}"
-        )
+        # return exact reason from scheduler/db_writes
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/jobs/search")
 def jobs_search(
@@ -217,19 +259,6 @@ def jobs_pool(
 
     return {"count": len(rows), "jobs": rows}
 
-#AI told me to add
-def custom_openapi():
-    if app.openapi_schema:
-        return app.openapi_schema
-    schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
-    # Add bearer security so GPT can inject Authorization automatically
-    schema.setdefault("components", {}).setdefault("securitySchemes", {})
-    schema["components"]["securitySchemes"]["bearerAuth"] = {"type": "http", "scheme": "bearer"}
-    schema["security"] = [{"bearerAuth": []}]
-    app.openapi_schema = schema
-    return app.openapi_schema
-
-app.openapi = custom_openapi
 
 @app.get("/openapi-gpt.json", include_in_schema=False)
 def openapi_gpt(request: Request):
@@ -422,3 +451,16 @@ def schedule_validate(req: ValidateReq):
     }
 
     return {"ok": len(errors) == 0, "errors": errors, "warnings": warnings, "metrics": metrics}
+
+
+@app.post("/jobs/by_work_orders")
+def jobs_by_work_orders(work_orders: List[int]):
+    jp = _jp()
+    if jp.empty or not work_orders:
+        return {"rows": []}
+    want = jp[jp["work_order"].isin(work_orders)].copy()
+    cols = [c for c in ["work_order","site_name","site_city","site_state","sow_1","due_date","region","jp_priority","days_til_due","cluster_id"] if c in want.columns]
+    want = want[cols]
+    if "due_date" in want.columns:
+        want["due_date"] = want["due_date"].astype(str)
+    return {"rows": want.astype(object).where(want.notna(), None).to_dict(orient="records")}
