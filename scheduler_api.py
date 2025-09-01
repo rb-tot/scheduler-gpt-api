@@ -1,52 +1,40 @@
 # scheduler_api.py
 import os
-from datetime import datetime
-from typing import List, Optional
-from fastapi import FastAPI, Header, HTTPException
-from pydantic import BaseModel
-import traceback
+from datetime import datetime, date, timedelta
+from typing import List, Optional, Dict, Any
+
 import pandas as pd
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.openapi.utils import get_openapi
-from fastapi import Request
 from fastapi.responses import JSONResponse
-from fastapi import Query
-from datetime import date
-from typing import Optional, List
-from supabase_client import sb_select
-# reuse your scheduler + db helpers
+from pydantic import BaseModel
+
+# DB helpers
+from supabase_client import sb_select, sb_rpc, supabase_client
+
+# Scheduler core
 import scheduler_V4a_fixed as sched
 from db_queries import job_pool_df as _jp, technicians_df as _techs
-#Added for databse function
-from supabase_client import sb_select, sb_rpc
 
+# -----------------------------------------------------------------------------
+# App
+# -----------------------------------------------------------------------------
+app = FastAPI(title="SchedulerGPT API", version="1.5.0")
 
-
-#SchedulerGPT API — aligned with Supabase schema
-#Endpoints:
-#- GET  /health              -> liveness check
-#- GET  /debug/keys          -> see which API keys are loaded
-#- POST /schedule/preview    -> build one-week plan (no writes)
-#- POST /schedule/commit     -> build + write to Supabase (uses db_writes)
-#- GET  /jobs/search         -> find unscheduled jobs with filters
-#- POST /jobs/by_work_orders -> fetch human-readable details for given WOs
-# Notes:
-#- Reads use db_queries.py (live Supabase).
-#- Writes happen inside scheduler_V4a_fixed.assign_technician(commit=True) via db_writes.py.
-
-app = FastAPI(title="SchedulerGPT API", version="1.4.7")
-
-# --- Auth keys (accept X-API-Key, Authorization: Bearer, or apikey) ---
+# Auth sources
 ACTIONS_API_KEY = os.getenv("ACTIONS_API_KEY")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY") or os.getenv("SUPABASE_KEY")
-BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://<YOUR-RENDER-SUBDOMAIN>.onrender.com")
+BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://scheduler-gpt-api.onrender.com")
+
 
 def _allowed_keys():
     return {k for k in (ACTIONS_API_KEY, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY) if k}
 
+
 def _auth(x_api_key: Optional[str], authorization: Optional[str], apikey: Optional[str]):
     allowed = _allowed_keys()
-    if not allowed:  # no keys set -> allow in dev
+    if not allowed:  # allow in dev if no keys configured
         return
     token = x_api_key or apikey
     if not token and authorization and authorization.lower().startswith("bearer "):
@@ -54,7 +42,10 @@ def _auth(x_api_key: Optional[str], authorization: Optional[str], apikey: Option
     if token not in allowed:
         raise HTTPException(status_code=401, detail="invalid or missing API key")
 
-# --- Models ---
+
+# -----------------------------------------------------------------------------
+# Models
+# -----------------------------------------------------------------------------
 class ScheduleRequest(BaseModel):
     tech_id: int
     start_date: str  # 'YYYY-MM-DD'
@@ -73,15 +64,33 @@ class ScheduleRequest(BaseModel):
     seed_region: Optional[str] = None
     seed_cluster: Optional[int] = None
 
+
+class ValidateReq(BaseModel):
+    work_order: int
+    technician_id: int
+    date: date
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+
+
+class WorkOrdersReq(BaseModel):
+    work_orders: List[int]
+
+
+# -----------------------------------------------------------------------------
+# Helpers
+# -----------------------------------------------------------------------------
 def _parse_date(s: str) -> datetime:
     return datetime.fromisoformat(s)
 
+
 def _summary(schedule):
-    # enrich jobs from job_pool so responses are human-readable
+    # enrich for readable preview
     jp = _jp()
-    by_wo = {}
+    by_wo: Dict[int, Dict[str, Any]] = {}
     if not jp.empty:
-        cols = [c for c in ["work_order","site_name","site_city","site_state","sow_1","due_date","region","jp_priority"] if c in jp.columns]
+        cols = [c for c in ["work_order", "site_name", "site_city", "site_state", "sow_1",
+                            "due_date", "region", "jp_priority"] if c in jp.columns]
         meta = jp[cols].copy()
         if "due_date" in meta.columns:
             meta["due_date"] = meta["due_date"].astype(str)
@@ -112,10 +121,25 @@ def _summary(schedule):
     return {"days": len(out), "jobs": total_jobs, "schedule": out}
 
 
-# --- Diagnostics ---
+def _sum_est_hours_for_sched(sched_rows: List[Dict[str, Any]], job_pool_map: Dict[int, Dict[str, Any]]) -> float:
+    total = 0.0
+    for r in sched_rows:
+        wo = r.get("work_order")
+        if wo is None:
+            continue
+        jp = job_pool_map.get(int(wo))
+        if jp and isinstance(jp.get("est_hours"), (int, float)):
+            total += float(jp["est_hours"])
+    return total
+
+
+# -----------------------------------------------------------------------------
+# Diagnostics
+# -----------------------------------------------------------------------------
 @app.get("/health")
 def health():
     return {"ok": True}
+
 
 @app.get("/debug/keys")
 def debug_keys():
@@ -125,7 +149,10 @@ def debug_keys():
         "has_ANON": bool(SUPABASE_ANON_KEY),
     }
 
-# --- Endpoints ---
+
+# -----------------------------------------------------------------------------
+# Schedule endpoints
+# -----------------------------------------------------------------------------
 @app.post("/schedule/preview")
 def schedule_preview(
     body: ScheduleRequest,
@@ -155,6 +182,7 @@ def schedule_preview(
         commit=False,
     )
     return _summary(sch)
+
 
 @app.post("/schedule/commit")
 def schedule_commit(
@@ -186,12 +214,13 @@ def schedule_commit(
             commit=True,
         )
         return _summary(sch)
-    
     except Exception as e:
-        # return exact reason from scheduler/db_writes
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# -----------------------------------------------------------------------------
+# Jobs search (PostGIS RPC)
+# -----------------------------------------------------------------------------
 @app.get("/jobs/search")
 def jobs_search(
     tech_id: int = Query(..., ge=1),
@@ -209,7 +238,7 @@ def jobs_search(
         "_due_within_days": due_within_days,
         "_limit": limit
     }) or []
-    # Optional: normalize names for Actions schema
+    # normalize names for Actions consumers
     for r in rows:
         if "site_city" in r and "city" not in r:
             r["city"] = r["site_city"]
@@ -218,6 +247,9 @@ def jobs_search(
     return rows
 
 
+# -----------------------------------------------------------------------------
+# Raw job pool window
+# -----------------------------------------------------------------------------
 @app.get("/jobs/pool")
 def jobs_pool(
     start: date,
@@ -227,13 +259,11 @@ def jobs_pool(
     is_night: Optional[bool] = Query(None),
     limit: int = Query(500, ge=1, le=5000),
 ):
-    
-    #Returns all job_pool rows in the due_date window.
-    #No default jp_status filter. GPT can pass statuses if needed.
-    
+    # Returns job_pool rows in a due_date window
     filters: List = [("due_date", "gte", str(start)), ("due_date", "lte", str(end))]
     if states:
-        filters.append(("state", "in", [s.strip() for s in states.split(",") if s.strip()]))
+        # use site_state (not state) per schema
+        filters.append(("site_state", "in", [s.strip() for s in states.split(",") if s.strip()]))
     if statuses and statuses.strip() != "*":
         filters.append(("jp_status", "in", [s.strip() for s in statuses.split(",") if s.strip()]))
 
@@ -248,40 +278,9 @@ def jobs_pool(
     return {"count": len(rows), "jobs": rows}
 
 
-@app.get("/openapi-gpt.json", include_in_schema=False)
-def openapi_gpt(request: Request):
-    schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
-
-    # 1) servers: set to your live base URL
-    base = str(request.base_url).rstrip("/")
-    schema["servers"] = [{"url": base}]
-
-    # 2) strip header parameters (Authorization, apikey, X-API-Key) from all ops
-    for _, methods in schema.get("paths", {}).items():
-        for _, op in list(methods.items()):
-            if not isinstance(op, dict):
-                continue
-            params = op.get("parameters", [])
-            op["parameters"] = [p for p in params if p.get("in") != "header"]
-            # also remove any per-operation security to avoid multiple schemes
-            if "security" in op:
-                del op["security"]
-
-    # 3) declare a single security scheme (API key in header)
-    schema.setdefault("components", {})
-    schema["components"]["securitySchemes"] = {
-        "ApiKeyAuth": {"type": "apiKey", "in": "header", "name": "X-API-Key"}
-    }
-    schema["security"] = [{"ApiKeyAuth": []}]
-
-    return JSONResponse(schema)
-
-# === READ endpoints for GPT ===
-from fastapi import Query
-from datetime import date, timedelta
-from typing import Optional, List, Dict, Any
-from supabase_client import sb_select, supabase_client
-
+# -----------------------------------------------------------------------------
+# Technicians and existing schedule
+# -----------------------------------------------------------------------------
 @app.get("/technicians")
 def technicians(
     active_only: bool = True,
@@ -304,6 +303,7 @@ def technicians(
         rows = out
     return {"count": len(rows), "technicians": rows[:limit]}
 
+
 @app.get("/schedule/existing")
 def schedule_existing(
     start: date,
@@ -311,7 +311,7 @@ def schedule_existing(
     technician_ids: Optional[str] = Query(None, description="CSV IDs"),
     limit: int = Query(1000, ge=1, le=5000),
 ):
-    filters: List = [("date","gte",str(start)), ("date","lte",str(end))]
+    filters: List = [("date", "gte", str(start)), ("date", "lte", str(end))]
     if technician_ids:
         ids = [int(x) for x in technician_ids.split(",") if x.strip().isdigit()]
         if ids:
@@ -319,33 +319,16 @@ def schedule_existing(
     rows = sb_select("scheduled_jobs", filters=filters)
     return {"count": len(rows), "rows": rows[:limit]}
 
-# === VALIDATION endpoint (rule checks) ===
-from pydantic import BaseModel
 
-class ValidateReq(BaseModel):
-    work_order: int
-    technician_id: int
-    date: date
-    start_time: Optional[str] = None
-    end_time: Optional[str] = None
-
-def _sum_est_hours_for_sched(sched_rows: List[Dict[str, Any]], job_pool_map: Dict[int, Dict[str, Any]]) -> float:
-    total = 0.0
-    for r in sched_rows:
-        wo = r.get("work_order")
-        if wo is None: 
-            continue
-        jp = job_pool_map.get(int(wo))
-        if jp and isinstance(jp.get("est_hours"), (int,float)):
-            total += float(jp["est_hours"])
-    return total
-
+# -----------------------------------------------------------------------------
+# Validation endpoint
+# -----------------------------------------------------------------------------
 @app.post("/schedule/validate")
 def schedule_validate(req: ValidateReq):
     sb = supabase_client()
 
     # Load job
-    job_rows = sb_select("job_pool", filters=[("work_order","eq", int(req.work_order))], limit=1)
+    job_rows = sb_select("job_pool", filters=[("work_order", "eq", int(req.work_order))], limit=1)
     if not job_rows:
         return {"ok": False, "errors": [f"work_order {req.work_order} not found"], "warnings": [], "metrics": {}}
     job = job_rows[0]
@@ -355,8 +338,8 @@ def schedule_validate(req: ValidateReq):
     if sj:
         return {"ok": False, "errors": ["Job already scheduled"], "warnings": [], "metrics": {}}
 
-    # Technician row
-    tech_rows = sb_select("technicians", filters=[("id","eq", int(req.technician_id))], limit=1)
+    # Technician row (use technician_id, not id)
+    tech_rows = sb_select("technicians", filters=[("technician_id", "eq", int(req.technician_id))], limit=1)
     if not tech_rows:
         return {"ok": False, "errors": [f"technician {req.technician_id} not found"], "warnings": [], "metrics": {}}
     tech = tech_rows[0]
@@ -364,29 +347,26 @@ def schedule_validate(req: ValidateReq):
     max_weekly = float(tech.get("max_weekly_hours") or 40)
 
     # Eligibility
-    elig_rows = sb_select("job_technician_eligibility", filters=[("work_order","eq", int(req.work_order))])
+    elig_rows = sb_select("job_technician_eligibility", filters=[("work_order", "eq", int(req.work_order))])
     if elig_rows:  # if table has entries for this job, enforce
         allowed = any(int(e.get("technician_id")) == int(req.technician_id) for e in elig_rows)
         if not allowed:
             return {"ok": False, "errors": ["Technician not eligible for this job"], "warnings": [], "metrics": {}}
 
     # Blackouts on that date
-    blks = sb_select("blackouts", filters=[("technician_id","eq", int(req.technician_id)), ("date","eq", str(req.date))])
+    blks = sb_select("blackouts", filters=[("technician_id", "eq", int(req.technician_id)), ("date", "eq", str(req.date))])
     blocked_hours = float(blks[0].get("hours_blocked")) if blks else 0.0
 
     # Existing schedule for day + week window
     day_sched = sb.table("scheduled_jobs").select("*").eq("technician_id", req.technician_id).eq("date", str(req.date)).execute().data
-    # week Monday..Sunday around req.date
     weekday = req.date.weekday()  # Mon=0
     week_start = req.date - timedelta(days=weekday)
     week_end = week_start + timedelta(days=6)
     wk_sched = sb.table("scheduled_jobs").select("*").eq("technician_id", req.technician_id).gte("date", str(week_start)).lte("date", str(week_end)).execute().data
 
     # Compute est hours
-    # map of job_pool by work_order for lookup
-    # get all work_orders referenced in existing schedule that we know
     wos = [int(x["work_order"]) for x in wk_sched if x.get("work_order") is not None]
-    jp_rows = sb_select("job_pool", filters=[("work_order","in", list(set(wos + [int(req.work_order)])))])
+    jp_rows = sb_select("job_pool", filters=[("work_order", "in", list(set(wos + [int(req.work_order)])))])
     jp_map = {int(r["work_order"]): r for r in jp_rows if r.get("work_order") is not None}
 
     est_this = float(job.get("est_hours") or 0.0)
@@ -395,8 +375,8 @@ def schedule_validate(req: ValidateReq):
     day_hours_after = day_hours_before + est_this
     week_hours_after = week_hours_before + est_this
 
-    errors = []
-    warnings = []
+    errors: List[str] = []
+    warnings: List[str] = []
 
     # Daily capacity (respect blackouts)
     if day_hours_after > max_daily - blocked_hours + 1e-6:
@@ -441,38 +421,54 @@ def schedule_validate(req: ValidateReq):
     return {"ok": len(errors) == 0, "errors": errors, "warnings": warnings, "metrics": metrics}
 
 
+# -----------------------------------------------------------------------------
+# Jobs by work orders (object body for GPT Actions)
+# -----------------------------------------------------------------------------
 @app.post("/jobs/by_work_orders")
-def jobs_by_work_orders(work_orders: List[int]):
+def jobs_by_work_orders(req: WorkOrdersReq):
     jp = _jp()
-    if jp.empty or not work_orders:
+    if jp.empty or not req.work_orders:
         return {"rows": []}
-    want = jp[jp["work_order"].isin(work_orders)].copy()
-    cols = [c for c in ["work_order","site_name","site_city","site_state","sow_1","due_date","region","jp_priority","days_til_due","cluster_id"] if c in want.columns]
+    want = jp[jp["work_order"].isin(req.work_orders)].copy()
+    cols = [c for c in ["work_order", "site_name", "site_city", "site_state", "sow_1",
+                         "due_date", "region", "jp_priority", "days_til_due", "cluster_id"]
+            if c in want.columns]
     want = want[cols]
     if "due_date" in want.columns:
         want["due_date"] = want["due_date"].astype(str)
     return {"rows": want.astype(object).where(want.notna(), None).to_dict(orient="records")}
-#openAPI for json
+
+
+# -----------------------------------------------------------------------------
+# Custom OpenAPI for GPT Actions
+# -----------------------------------------------------------------------------
 def custom_openapi():
     if app.openapi_schema:
         return app.openapi_schema
     schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
-    # required by GPT Actions
+
+    # 1) servers (required by GPT Actions)
     schema["servers"] = [{"url": BASE_URL}]
-    comps = schema.setdefault("components", {})
-    comps["securitySchemes"] = {
+
+    # 2) strip header params from operations to avoid warnings
+    for _, methods in schema.get("paths", {}).items():
+        for _, op in list(methods.items()):
+            if not isinstance(op, dict):
+                continue
+            params = op.get("parameters", [])
+            op["parameters"] = [p for p in params if p.get("in") != "header"]
+            if "security" in op:
+                del op["security"]
+
+    # 3) single security scheme
+    schema.setdefault("components", {})
+    schema["components"]["securitySchemes"] = {
         "ApiKeyAuth": {"type": "apiKey", "in": "header", "name": "X-API-Key"}
     }
     schema["security"] = [{"ApiKeyAuth": []}]
-    # optional: strip header params to silence warnings
-    for _, methods in schema.get("paths", {}).items():
-        for _, op in methods.items():
-            if "parameters" in op:
-                op["parameters"] = [
-                    p for p in op["parameters"]
-                    if not (p.get("in") == "header" and p.get("name") in {"X-API-Key","Authorization","apikey"})
-                ]
+
     app.openapi_schema = schema
     return schema
+
 
 app.openapi = custom_openapi
