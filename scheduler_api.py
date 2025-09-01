@@ -16,6 +16,10 @@ from supabase_client import sb_select
 # reuse your scheduler + db helpers
 import scheduler_V4a_fixed as sched
 from db_queries import job_pool_df as _jp, technicians_df as _techs
+#Added for databse function
+from supabase_client import sb_select, sb_rpc
+
+
 
 #SchedulerGPT API — aligned with Supabase schema
 #Endpoints:
@@ -29,7 +33,7 @@ from db_queries import job_pool_df as _jp, technicians_df as _techs
 #- Reads use db_queries.py (live Supabase).
 #- Writes happen inside scheduler_V4a_fixed.assign_technician(commit=True) via db_writes.py.
 
-app = FastAPI(title="SchedulerGPT API", version="1.4.5")
+app = FastAPI(title="SchedulerGPT API", version="1.4.6")
 
 # --- Auth keys (accept X-API-Key, Authorization: Bearer, or apikey) ---
 ACTIONS_API_KEY = os.getenv("ACTIONS_API_KEY")
@@ -189,46 +193,29 @@ def schedule_commit(
 
 @app.get("/jobs/search")
 def jobs_search(
-    region: Optional[str] = None,
-    sow: Optional[str] = None,
-    horizon_days: Optional[int] = None,
-    tech_id: Optional[int] = None,
-    radius_miles: Optional[int] = None,
+    tech_id: int = Query(..., ge=1),
+    radius_miles: int = Query(250, ge=1, le=1000),
+    due_within_days: int = Query(21, ge=1, le=180),
+    limit: int = Query(50, ge=1, le=500),
     x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
     authorization: Optional[str] = Header(default=None, alias="Authorization"),
     apikey: Optional[str] = Header(default=None, alias="apikey"),
 ):
     _auth(x_api_key, authorization, apikey)
-    try:
-        jp = _jp().copy()
-        if "jp_status" in jp.columns:
-            jp = jp[jp["jp_status"] != "Scheduled"]
-        if region and "region" in jp.columns:
-            jp = jp[jp["region"] == region]
-        if sow and "sow_1" in jp.columns:
-            jp = jp[jp["sow_1"].fillna("").str.contains(sow, case=False, regex=False)]
-        if horizon_days is not None and all(c in jp.columns for c in ("days_til_due","jp_priority","night_test")):
-            jp = jp[(jp["days_til_due"] <= horizon_days) | (jp["jp_priority"] == "Monthly O&M") | (jp["night_test"] == True)]
-        if tech_id is not None and radius_miles is not None and all(c in jp.columns for c in ("latitude","longitude")):
-            t = _techs()
-            home = t.loc[t["technician_id"] == tech_id].iloc[0]
-            def _m(row):
-                return sched.haversine(home["home_latitude"], home["home_longitude"], row["latitude"], row["longitude"])
-            jp = jp[jp.apply(_m, axis=1) <= float(radius_miles)]
-        cols = ["work_order","site_name","region","sow_1","due_date","jp_priority","days_til_due","latitude","longitude","cluster_id"]
-        cols = [c for c in cols if c in jp.columns]
+    rows = sb_rpc("jobs_within_radius", {
+        "_tech_id": tech_id,
+        "_radius_miles": radius_miles,
+        "_due_within_days": due_within_days,
+        "_limit": limit
+    }) or []
+    # Optional: normalize names for Actions schema
+    for r in rows:
+        if "site_city" in r and "city" not in r:
+            r["city"] = r["site_city"]
+        if "site_state" in r and "state" not in r:
+            r["state"] = r["site_state"]
+    return rows
 
-        # JSON-safe: cast dates to str, cast all columns to object, replace NaN with None
-        safe = jp[cols].copy()
-        if "due_date" in safe.columns:
-            safe["due_date"] = safe["due_date"].astype(str)
-        safe = safe.astype(object)               # <- important, prevents None -> NaN coercion
-        safe = safe.where(pd.notna(safe), None)  # replace remaining NaN with JSON-null
-
-        return {"count": int(len(jp)), "rows": safe.head(200).to_dict(orient="records")}
-    except Exception as e:
-        print("SEARCH ERROR:", traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"search_failed: {e}")
 
 @app.get("/jobs/pool")
 def jobs_pool(
