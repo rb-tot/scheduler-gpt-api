@@ -33,12 +33,13 @@ from supabase_client import sb_select, sb_rpc
 #- Reads use db_queries.py (live Supabase).
 #- Writes happen inside scheduler_V4a_fixed.assign_technician(commit=True) via db_writes.py.
 
-app = FastAPI(title="SchedulerGPT API", version="1.4.6")
+app = FastAPI(title="SchedulerGPT API", version="1.4.7")
 
 # --- Auth keys (accept X-API-Key, Authorization: Bearer, or apikey) ---
 ACTIONS_API_KEY = os.getenv("ACTIONS_API_KEY")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY") or os.getenv("SUPABASE_KEY")
+BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://<YOUR-RENDER-SUBDOMAIN>.onrender.com")
 
 def _allowed_keys():
     return {k for k in (ACTIONS_API_KEY, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY) if k}
@@ -451,3 +452,27 @@ def jobs_by_work_orders(work_orders: List[int]):
     if "due_date" in want.columns:
         want["due_date"] = want["due_date"].astype(str)
     return {"rows": want.astype(object).where(want.notna(), None).to_dict(orient="records")}
+#openAPI for json
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
+    # required by GPT Actions
+    schema["servers"] = [{"url": BASE_URL}]
+    comps = schema.setdefault("components", {})
+    comps["securitySchemes"] = {
+        "ApiKeyAuth": {"type": "apiKey", "in": "header", "name": "X-API-Key"}
+    }
+    schema["security"] = [{"ApiKeyAuth": []}]
+    # optional: strip header params to silence warnings
+    for _, methods in schema.get("paths", {}).items():
+        for _, op in methods.items():
+            if "parameters" in op:
+                op["parameters"] = [
+                    p for p in op["parameters"]
+                    if not (p.get("in") == "header" and p.get("name") in {"X-API-Key","Authorization","apikey"})
+                ]
+    app.openapi_schema = schema
+    return schema
+
+app.openapi = custom_openapi
