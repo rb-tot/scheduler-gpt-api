@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Scheduler Dashboard</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Job Scheduler Dashboard</h1>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label>Technician:</label>
+                <select id="tech-select">
+                    <option value="">Select...</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label>Week Starting:</label>
+                <input type="date" id="week-start" />
+            </div>
+            
+            <button class="btn-primary" onclick="loadJobs()">Load Jobs</button>
+            <button class="btn-success" onclick="generateSchedule()">Generate Schedule</button>
+        </div>
+
+        <div class="main-content">
+            <div id="map"></div>
+            
+            <div id="sidebar">
+                <h3>Available Jobs (<span id="job-count">0</span>)</h3>
+                <div id="job-list"></div>
+                
+                <h3>Schedule Results</h3>
+                <div id="results"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="/static/app.js"></script>
+</body>
+</html>
