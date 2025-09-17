@@ -4,6 +4,7 @@ pydantic==2.*
 python-dotenv==1.*
 httpx==0.27.2
 postgrest==0.16.*
-supabase==2.*
+supabase==2.0.3
 pandas==2.*
 numpy==2.*
+aiofiles

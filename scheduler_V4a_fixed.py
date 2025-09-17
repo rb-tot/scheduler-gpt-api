@@ -8,11 +8,11 @@ from db_queries import job_pool_df as _jp, eligibility_df as _elig, technicians_
 # Scheduler V4a (Supabase-backed) — SOW-week, fixed jobs, radius cap, seed prefs
 # ===========================================================================
 
-# Live data from Supabase
-job_pool_df = _jp()
-job_technician_eligibility_df = _elig()
-technicians_df = _techs()
-site_distance_matrix_df = pd.DataFrame()  # fallback to 50 mph path
+# Don't load on startup - will load when needed
+job_pool_df = pd.DataFrame()
+job_technician_eligibility_df = pd.DataFrame()
+technicians_df = pd.DataFrame()
+site_distance_matrix_df = pd.DataFrame()
 
 # Ensure datetime types
 if 'due_date' in job_pool_df.columns:
@@ -67,6 +67,15 @@ def schedule_technician_week(
         seed_cluster: int | None = None,
 ):
     """Return a one-week schedule list[{date, jobs, total_hours}] for a tech."""
+    global job_pool_df, job_technician_eligibility_df, technicians_df
+    
+    # Load data if empty
+    if job_pool_df.empty:
+        job_pool_df = _jp()
+    if job_technician_eligibility_df.empty:
+        job_technician_eligibility_df = _elig()
+    if technicians_df.empty:
+        technicians_df = _techs()
     tech = technicians_df.loc[technicians_df['technician_id'] == tech_id].iloc[0]
     assigned_clusters    = assigned_clusters or []
     priority_work_orders = priority_work_orders or []
