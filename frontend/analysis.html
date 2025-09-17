@@ -1,0 +1,44 @@
+<!-- frontend/analysis.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Monthly Analysis - SchedulerGPT</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>📊 Monthly Planning Analysis</h1>
+        
+        <div class="controls">
+            <select id="month-select">
+                <option value="11">November 2025</option>
+                <option value="12">December 2025</option>
+            </select>
+            <button onclick="runAnalysis()">Run Analysis</button>
+        </div>
+        
+        <div id="summary-cards" class="card-grid">
+            <div class="card">
+                <h3>Total Jobs</h3>
+                <div class="big-number" id="total-jobs">-</div>
+            </div>
+            <div class="card problem">
+                <h3>Problem Areas</h3>
+                <div id="problem-counts">-</div>
+            </div>
+        </div>
+        
+        <div id="weekly-matrix" class="matrix">
+            <h2>Weekly Priority Matrix</h2>
+            <div id="week-grid"></div>
+        </div>
+        
+        <div id="problem-details" class="details">
+            <h2>Problem Jobs Detail</h2>
+            <div id="problem-list"></div>
+        </div>
+    </div>
+    
+    <script src="/static/analysis.js"></script>
+</body>
+</html>

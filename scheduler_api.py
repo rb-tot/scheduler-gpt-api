@@ -22,7 +22,7 @@ from fastapi.responses import FileResponse
 # -----------------------------------------------------------------------------
 # App
 # -----------------------------------------------------------------------------
-app = FastAPI(title="SchedulerGPT API", version="1.5.0")
+app = FastAPI(title="SchedulerGPT API", version="1.6.0")
 # Serve frontend files
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
 
@@ -444,11 +444,127 @@ def jobs_by_work_orders(req: WorkOrdersReq):
         want["due_date"] = want["due_date"].astype(str)
     return {"rows": want.astype(object).where(want.notna(), None).to_dict(orient="records")}
 
+#-----------------------------------------------------------------------------------------------------------------------------------------
+# Add to scheduler_api.py
 
-# Add this route to serve the main page
-@app.get("/")
-def serve_frontend():
-    return FileResponse("frontend/index.html")
+@app.get("/analysis/monthly")
+def analyze_monthly_jobs(
+    year: int = Query(...),
+    month: int = Query(...),
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+):
+    _auth(x_api_key, None, None)
+    
+    # Get all jobs for the month
+    month_start = f"{year}-{month:02d}-01"
+    month_end = f"{year}-{month:02d}-31"
+    
+    jobs = sb_select("job_pool", filters=[
+        ("due_date", "gte", month_start),
+        ("due_date", "lte", month_end),
+        ("jp_status", "in", ["Call", "Waiting to Schedule"])
+    ])
+    
+    # Get tech locations for distance calculations
+    techs = sb_select("technicians", filters=[("active", "eq", True)])
+    
+       
+    # Analyze problems
+    problem_jobs = {
+        "remote_locations": [],  # >100 miles from nearest tech
+        "limited_eligibility": [],  # Only 1-2 techs qualified
+        "night_jobs": [],
+        "friday_restricted": []  # King Soopers, City Market, Alta
+    }
+    
+    # Weekly distribution
+    weekly_dist = {
+        "week_1": {"must_do": [], "should_do": []},
+        "week_2": {"must_do": [], "should_do": []},
+        "week_3": {"must_do": [], "should_do": []},
+        "week_4": {"must_do": [], "should_do": []},
+    }
+    
+    for job in jobs:
+        # Check eligibility - IT'S ALREADY IN THE DATA!
+        if job.get("tech_count", 0) <= 2:
+            problem_jobs["limited_eligibility"].append({
+                "work_order": job["work_order"],
+                "site_name": job["site_name"],
+                "eligible_techs": job["tech_count"]
+            })
+        
+        # Check remoteness
+        if techs:
+            min_distance = min([
+                haversine(t["home_latitude"], t["home_longitude"], 
+                         job["latitude"], job["longitude"])
+                for t in techs
+            ])
+            if min_distance > 100:
+                problem_jobs["remote_locations"].append({
+                    "work_order": job["work_order"],
+                    "site_name": job["site_name"],
+                    "distance": round(min_distance, 1)
+                })
+        
+        # Check night jobs
+        if job.get("is_night") or job.get("night_test"):
+            problem_jobs["night_jobs"].append({
+                "work_order": wo,
+                "site_name": job["site_name"]
+            })
+        
+        # Check Friday restrictions
+        if any(x in job.get("site_name", "") for x in ["King Soopers", "City Market", "Alta"]):
+            problem_jobs["friday_restricted"].append({
+                "work_order": wo,
+                "site_name": job["site_name"]
+            })
+        
+        # Categorize by week
+        due_date = pd.to_datetime(job["due_date"])
+        week_num = (due_date.day - 1) // 7 + 1
+        week_key = f"week_{min(week_num, 4)}"
+        
+        if job["jp_priority"] in ["NOV", "Urgent", "Monthly O&M"]:
+            weekly_dist[week_key]["must_do"].append(wo)
+        else:
+            weekly_dist[week_key]["should_do"].append(wo)
+    
+    # Summary stats
+    summary = {
+        "total_jobs": len(jobs),
+        "problem_jobs_count": {
+            "remote": len(problem_jobs["remote_locations"]),
+            "limited_techs": len(problem_jobs["limited_eligibility"]),
+            "night": len(problem_jobs["night_jobs"]),
+            "friday_restricted": len(problem_jobs["friday_restricted"])
+        },
+        "weekly_summary": {
+            k: {
+                "must_do": len(v["must_do"]),
+                "should_do": len(v["should_do"])
+            } for k, v in weekly_dist.items()
+        }
+    }
+    
+    return {
+        "summary": summary,
+        "problem_jobs": problem_jobs,
+        "weekly_distribution": weekly_dist
+    }
+
+# Add haversine helper if not exists
+def haversine(lat1, lon1, lat2, lon2):
+    from math import radians, sin, cos, sqrt, atan2
+    R = 3958.8
+    lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = sin(dlat/2)**2 + cos(lat1)*cos(lat2)*sin(dlon/2)**2
+    c = 2*atan2(sqrt(a), sqrt(1-a))
+    return R * c
 
 # -----------------------------------------------------------------------------
 # Custom OpenAPI for GPT Actions
