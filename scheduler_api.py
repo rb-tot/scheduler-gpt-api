@@ -25,7 +25,9 @@ from fastapi.responses import FileResponse
 app = FastAPI(title="SchedulerGPT API", version="1.6.0")
 # Serve frontend files
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
-
+@app.get("/")
+def serve_frontend():
+    return FileResponse("frontend/index.html")
 
 # Auth sources
 ACTIONS_API_KEY = os.getenv("ACTIONS_API_KEY")
