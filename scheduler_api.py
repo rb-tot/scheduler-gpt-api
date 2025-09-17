@@ -513,7 +513,7 @@ def analyze_monthly_jobs(
         # Check night jobs
         if job.get("is_night") or job.get("night_test"):
             problem_jobs["night_jobs"].append({
-                "work_order": wo,
+                "work_order": job["work_order"], # Use job
                 "site_name": job["site_name"]
             })
         
