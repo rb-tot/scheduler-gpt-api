@@ -16,10 +16,16 @@ from supabase_client import sb_select, sb_rpc, supabase_client
 import scheduler_V4a_fixed as sched
 from db_queries import job_pool_df as _jp, technicians_df as _techs
 
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
 # -----------------------------------------------------------------------------
 # App
 # -----------------------------------------------------------------------------
 app = FastAPI(title="SchedulerGPT API", version="1.5.0")
+# Serve frontend files
+app.mount("/static", StaticFiles(directory="frontend"), name="static")
+
 
 # Auth sources
 ACTIONS_API_KEY = os.getenv("ACTIONS_API_KEY")
@@ -438,6 +444,11 @@ def jobs_by_work_orders(req: WorkOrdersReq):
         want["due_date"] = want["due_date"].astype(str)
     return {"rows": want.astype(object).where(want.notna(), None).to_dict(orient="records")}
 
+
+# Add this route to serve the main page
+@app.get("/")
+def serve_frontend():
+    return FileResponse("frontend/index.html")
 
 # -----------------------------------------------------------------------------
 # Custom OpenAPI for GPT Actions
