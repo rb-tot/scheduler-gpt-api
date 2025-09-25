@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 # DB helpers
-from supabase_client import sb_select, sb_rpc, supabase_client
+from supabase_client import sb_select, sb_rpc, sb_insert, sb_update, supabase_client
 
 # Scheduler core
 import scheduler_V4a_fixed as sched
@@ -731,6 +731,140 @@ async def check_conflicts(
         "warnings": warnings,
         "can_schedule": len(conflicts) == 0
     }
+
+# -----------------------------------------------------------------------------
+# Schedule Modification Endpoints
+# -----------------------------------------------------------------------------
+
+class ScheduleUpdate(BaseModel):
+    work_order: int
+    technician_id: int
+    date: str
+    start_time: Optional[str] = "09:00"
+    est_hours: Optional[float] = 2.0
+
+class ScheduleUpdateRequest(BaseModel):
+    tech_id: int
+    week_start: str
+    updates: List[ScheduleUpdate]
+
+@app.post("/schedule/update")
+async def update_schedule(
+    body: ScheduleUpdateRequest,
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+):
+    _auth(x_api_key, None, None)
+
+    try:
+        # Get the week range
+        week_start = _parse_date(body.week_start)
+        week_end = week_start + timedelta(days=6)
+
+        # Delete existing schedule for this tech and week
+        sb = supabase_client()
+        existing = sb.table("scheduled_jobs").delete().eq(
+            "technician_id", body.tech_id
+        ).gte(
+            "date", str(week_start.date())
+        ).lte(
+            "date", str(week_end.date())
+        ).execute()
+
+        # Insert new schedule
+        new_rows = []
+        for update in body.updates:
+            new_rows.append({
+                "work_order": update.work_order,
+                "technician_id": update.technician_id,
+                "date": update.date,
+                "start_time": update.start_time,
+                "est_hours": update.est_hours,
+                "created_by": "schedule-editor",
+                "created_at": datetime.now().isoformat()
+            })
+
+        if new_rows:
+            result = sb_insert("scheduled_jobs", new_rows)
+
+        return {
+            "success": True,
+            "message": f"Updated {len(new_rows)} jobs for technician {body.tech_id}",
+            "updated_jobs": len(new_rows)
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/schedule/job/{work_order}")
+async def remove_scheduled_job(
+    work_order: int,
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+):
+    _auth(x_api_key, None, None)
+
+    try:
+        sb = supabase_client()
+        result = sb.table("scheduled_jobs").delete().eq(
+            "work_order", work_order
+        ).execute()
+
+        return {
+            "success": True,
+            "message": f"Removed job {work_order} from schedule"
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/schedule/reschedule")
+async def reschedule_job(
+    work_order: int,
+    new_tech_id: int,
+    new_date: str,
+    new_start_time: str = "09:00",
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+):
+    _auth(x_api_key, None, None)
+
+    try:
+        # Validate the new assignment
+        req = ValidateReq(
+            work_order=work_order,
+            technician_id=new_tech_id,
+            date=_parse_date(new_date).date(),
+            start_time=new_start_time
+        )
+
+        validation = schedule_validate(req)
+
+        if not validation["ok"]:
+            return {
+                "success": False,
+                "errors": validation["errors"],
+                "warnings": validation["warnings"]
+            }
+
+        # Update the schedule
+        sb = supabase_client()
+        result = sb_update(
+            "scheduled_jobs",
+            {"work_order": work_order},
+            {
+                "technician_id": new_tech_id,
+                "date": new_date,
+                "start_time": new_start_time,
+                "updated_at": datetime.now().isoformat()
+            }
+        )
+
+        return {
+            "success": True,
+            "message": f"Rescheduled job {work_order}",
+            "warnings": validation["warnings"]
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # -----------------------------------------------------------------------------
 # Custom OpenAPI for GPT Actions
