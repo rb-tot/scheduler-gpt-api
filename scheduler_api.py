@@ -520,7 +520,7 @@ def analyze_monthly_jobs(
         # Check Friday restrictions
         if any(x in job.get("site_name", "") for x in ["King Soopers", "City Market", "Alta"]):
             problem_jobs["friday_restricted"].append({
-                "work_order": wo,
+                "work_order": job["work_order"],
                 "site_name": job["site_name"]
             })
         
@@ -530,9 +530,9 @@ def analyze_monthly_jobs(
         week_key = f"week_{min(week_num, 4)}"
         
         if job["jp_priority"] in ["NOV", "Urgent", "Monthly O&M"]:
-            weekly_dist[week_key]["must_do"].append(wo)
+            weekly_dist[week_key]["must_do"].append(job["work_order"])
         else:
-            weekly_dist[week_key]["should_do"].append(wo)
+            weekly_dist[week_key]["should_do"].append(job["work_order"])
     
     # Summary stats
     summary = {
@@ -567,6 +567,170 @@ def haversine(lat1, lon1, lat2, lon2):
     a = sin(dlat/2)**2 + cos(lat1)*cos(lat2)*sin(dlon/2)**2
     c = 2*atan2(sqrt(a), sqrt(1-a))
     return R * c
+
+# -----------------------------------------------------------------------------
+# Batch Scheduling Endpoints
+# -----------------------------------------------------------------------------
+
+class BatchScheduleRequest(BaseModel):
+    tech_ids: List[int]
+    start_date: str  # 'YYYY-MM-DD'
+    end_date: str    # 'YYYY-MM-DD'
+    optimization_mode: str = "balanced"  # balanced, minimize_travel, maximize_utilization
+    constraints: Optional[Dict[str, Any]] = None
+
+class OptimizationResult(BaseModel):
+    tech_id: int
+    tech_name: str
+    scheduled_jobs: int
+    total_hours: float
+    utilization: float
+    travel_time: float
+
+@app.post("/schedule/batch")
+async def batch_schedule(
+    body: BatchScheduleRequest,
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+):
+    _auth(x_api_key, None, None)
+
+    results = []
+    start = _parse_date(body.start_date)
+    end = _parse_date(body.end_date)
+
+    # Get all available jobs in the date range
+    jobs = sb_select("job_pool", filters=[
+        ("due_date", "gte", str(start.date())),
+        ("due_date", "lte", str(end.date())),
+        ("jp_status", "in", ["Call", "Waiting to Schedule"])
+    ])
+
+    # Get technician availability
+    techs = sb_select("technicians", filters=[
+        ("technician_id", "in", body.tech_ids),
+        ("active", "eq", True)
+    ])
+
+    tech_schedules = {}
+
+    # Run optimization based on mode
+    if body.optimization_mode == "minimize_travel":
+        # Cluster jobs by location and assign to nearest tech
+        for tech in techs:
+            tech_id = tech["technician_id"]
+            # Find jobs within tech's primary region
+            tech_jobs = [j for j in jobs if
+                        j.get("region") in tech.get("regions", [])]
+
+            # Schedule with minimal travel
+            schedule = sched.assign_technician(
+                tech_id=tech_id,
+                start_date=start,
+                horizon_days=(end - start).days,
+                max_drive_minutes=30,  # Minimize travel
+                commit=False
+            )
+            tech_schedules[tech_id] = schedule
+
+    elif body.optimization_mode == "maximize_utilization":
+        # Fill tech schedules to capacity
+        for tech in techs:
+            tech_id = tech["technician_id"]
+            schedule = sched.assign_technician(
+                tech_id=tech_id,
+                start_date=start,
+                horizon_days=(end - start).days,
+                weekly_target_hours_min=45,
+                weekly_target_hours_max=50,
+                commit=False
+            )
+            tech_schedules[tech_id] = schedule
+
+    else:  # balanced mode
+        for tech in techs:
+            tech_id = tech["technician_id"]
+            schedule = sched.assign_technician(
+                tech_id=tech_id,
+                start_date=start,
+                horizon_days=(end - start).days,
+                commit=False
+            )
+            tech_schedules[tech_id] = schedule
+
+    # Calculate results
+    for tech in techs:
+        tech_id = tech["technician_id"]
+        schedule = tech_schedules.get(tech_id, [])
+
+        total_jobs = sum(len(day.get("jobs", [])) for day in schedule)
+        total_hours = sum(day.get("total_hours", 0) for day in schedule)
+        max_hours = tech.get("max_weekly_hours", 40) * ((end - start).days / 7)
+
+        results.append(OptimizationResult(
+            tech_id=tech_id,
+            tech_name=tech.get("name", "Unknown"),
+            scheduled_jobs=total_jobs,
+            total_hours=round(total_hours, 2),
+            utilization=round((total_hours / max_hours * 100) if max_hours > 0 else 0, 1),
+            travel_time=0  # Would need to calculate from schedule
+        ))
+
+    return {
+        "optimization_mode": body.optimization_mode,
+        "date_range": {
+            "start": str(start.date()),
+            "end": str(end.date())
+        },
+        "results": results,
+        "summary": {
+            "total_techs": len(results),
+            "total_jobs_scheduled": sum(r.scheduled_jobs for r in results),
+            "avg_utilization": round(sum(r.utilization for r in results) / len(results), 1) if results else 0
+        }
+    }
+
+@app.post("/schedule/conflicts")
+async def check_conflicts(
+    tech_id: int,
+    date: str,
+    work_orders: List[int],
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+):
+    _auth(x_api_key, None, None)
+
+    conflicts = []
+    warnings = []
+
+    # Check each work order for conflicts
+    for wo in work_orders:
+        req = ValidateReq(
+            work_order=wo,
+            technician_id=tech_id,
+            date=_parse_date(date).date()
+        )
+
+        result = schedule_validate(req)
+
+        if not result["ok"]:
+            conflicts.append({
+                "work_order": wo,
+                "errors": result["errors"],
+                "type": "hard_conflict"
+            })
+        elif result["warnings"]:
+            warnings.append({
+                "work_order": wo,
+                "warnings": result["warnings"],
+                "type": "soft_conflict"
+            })
+
+    return {
+        "date": date,
+        "tech_id": tech_id,
+        "conflicts": conflicts,
+        "warnings": warnings,
+        "can_schedule": len(conflicts) == 0
+    }
 
 # -----------------------------------------------------------------------------
 # Custom OpenAPI for GPT Actions
