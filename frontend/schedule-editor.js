@@ -1,4 +1,5 @@
 // Schedule Editor JavaScript - Drag and Drop Functionality
+const API_KEY = 'devkey123';
 
 class ScheduleEditor {
     constructor() {
@@ -70,7 +71,9 @@ class ScheduleEditor {
 
     async loadTechnicians() {
         try {
-            const response = await fetch('/technicians');
+            const response = await fetch('/technicians', {
+                headers: {'X-API-Key': API_KEY}
+            });
             const data = await response.json();
 
             const select = document.getElementById('tech-select');
@@ -134,7 +137,8 @@ class ScheduleEditor {
             weekEnd.setDate(weekEnd.getDate() + 6);
 
             const response = await fetch(
-                `/schedule/existing?start=${this.weekStart}&end=${weekEnd.toISOString().split('T')[0]}&technician_ids=${this.techId}`
+                `/schedule/existing?start=${this.weekStart}&end=${weekEnd.toISOString().split('T')[0]}&technician_ids=${this.techId}`,
+                {headers: {'X-API-Key': API_KEY}}
             );
             const data = await response.json();
 
@@ -149,7 +153,7 @@ class ScheduleEditor {
         try {
             const response = await fetch(
                 `/jobs/search?tech_id=${this.techId}&radius_miles=100&due_within_days=30&limit=100`,
-                { headers: { 'X-API-Key': localStorage.getItem('apiKey') || '' } }
+                { headers: { 'X-API-Key': API_KEY } }
             );
             const jobs = await response.json();
 
@@ -326,7 +330,7 @@ class ScheduleEditor {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-API-Key': localStorage.getItem('apiKey') || ''
+                    'X-API-Key': API_KEY
                 },
                 body: JSON.stringify({
                     tech_id: this.techId,
@@ -572,7 +576,7 @@ class ScheduleEditor {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-API-Key': localStorage.getItem('apiKey') || ''
+                    'X-API-Key': API_KEY
                 },
                 body: JSON.stringify({
                     tech_id: this.techId,

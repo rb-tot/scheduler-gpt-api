@@ -1,5 +1,6 @@
 // Monthly Analysis JavaScript
 const API_BASE = '/';
+const API_KEY = 'devkey123'
 
 async function runAnalysis() {
     const monthSelect = document.getElementById('month-select');
@@ -11,8 +12,7 @@ async function runAnalysis() {
     try {
         const response = await fetch(`${API_BASE}analysis/monthly?year=${year}&month=${month}`, {
             headers: {
-                'X-API-Key': localStorage.getItem('apiKey') || ''
-            }
+                'X-API-Key': API_KEY}
         });
 
         if (!response.ok) {
