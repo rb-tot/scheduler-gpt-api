@@ -372,11 +372,9 @@
             initMap();
             loadTechnicians();
             
-            // Set default dates to current month
-            const now = new Date();
-            document.getElementById('start-date').value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-            const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-            document.getElementById('end-date').value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${lastDay.getDate()}`;
+            // Set default dates to September 2025 (where your jobs are)
+            document.getElementById('start-date').value = '2025-09-01';
+            document.getElementById('end-date').value = '2025-09-30';
         };
     </script>
 </body>

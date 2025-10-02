@@ -285,6 +285,42 @@ def jobs_pool(
 
     return {"count": len(rows), "jobs": rows}
 
+@app.get("/jobs/available")
+def get_available_jobs(
+    start_date: date = Query(..., description="Start date for job search"),
+    end_date: date = Query(..., description="End date for job search"),
+    tech_id: Optional[int] = Query(None, description="Filter by technician eligibility"),
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    apikey: Optional[str] = Header(default=None, alias="apikey"),
+):
+    """Get all available (unscheduled) jobs for scheduling within a date range."""
+    _auth(x_api_key, authorization, apikey)
+    
+    filters = [
+        ("due_date", "gte", str(start_date)),
+        ("due_date", "lte", str(end_date)),
+        ("jp_status", "in", ["Call", "Waiting to Schedule"])
+    ]
+    
+    jobs = sb_select("job_pool", filters=filters)
+    
+    # If tech_id provided, filter to only eligible jobs
+    if tech_id:
+        elig_rows = sb_select("job_technician_eligibility", 
+                             filters=[("technician_id", "eq", tech_id)])
+        eligible_wos = {e["work_order"] for e in elig_rows}
+        jobs = [j for j in jobs if j["work_order"] in eligible_wos]
+    
+    # Add eligibility info to each job
+    for job in jobs:
+        elig = sb_select("job_technician_eligibility", 
+                        filters=[("work_order", "eq", job["work_order"])])
+        job["eligible_tech_count"] = len(elig)
+        job["eligible_tech_ids"] = [e["technician_id"] for e in elig]
+    
+    return {"count": len(jobs), "jobs": jobs}
+
 
 # -----------------------------------------------------------------------------
 # Technicians and existing schedule
@@ -457,10 +493,13 @@ def analyze_monthly_jobs(
 ):
     _auth(x_api_key, None, None)
     
+    # Calculate the actual last day of the month
+    import calendar
+    last_day = calendar.monthrange(year, month)[1]
+    
     # Get all jobs for the month
     month_start = f"{year}-{month:02d}-01"
-    month_end = f"{year}-{month:02d}-31"
-    
+    month_end = f"{year}-{month:02d}-{last_day:02d}"  # Use actual last day
     jobs = sb_select("job_pool", filters=[
         ("due_date", "gte", month_start),
         ("due_date", "lte", month_end),
