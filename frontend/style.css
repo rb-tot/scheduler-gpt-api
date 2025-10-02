@@ -154,3 +154,44 @@ button:hover {
     padding: 5px 0;
     font-size: 14px;
 }
+.header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 1rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.nav-buttons {
+    display: flex;
+    gap: 10px;
+}
+
+.nav-btn {
+    background: rgba(255,255,255,0.2);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 4px;
+    text-decoration: none;
+    border: 1px solid rgba(255,255,255,0.3);
+}
+
+.nav-btn:hover {
+    background: rgba(255,255,255,0.3);
+}
+.day-jobs {
+    min-height: 100px;
+    padding: 5px;
+    border: 2px dashed transparent;
+    transition: all 0.3s;
+}
+
+.day-jobs:empty::after {
+    content: 'Drop jobs here';
+    display: block;
+    text-align: center;
+    color: #9ca3af;
+    font-style: italic;
+    padding: 20px;
+}

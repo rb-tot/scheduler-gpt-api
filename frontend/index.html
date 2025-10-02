@@ -261,25 +261,38 @@
                 <div class="schedule-grid" id="schedule-grid">
                     <div class="day-column" data-day="monday">
                         <div class="day-header">Monday</div>
-                        <div class="day-jobs" ondrop="dropJob(event, 'monday')" ondragover="allowDrop(event)"></div>
+                        <div class="day-jobs" id="monday-jobs" ondrop="dropJob(event, 'monday')" ondragover="allowDrop(event)" ondragleave="clearDrop(event)"></div>
                     </div>
                     <div class="day-column" data-day="tuesday">
                         <div class="day-header">Tuesday</div>
-                        <div class="day-jobs" ondrop="dropJob(event, 'tuesday')" ondragover="allowDrop(event)"></div>
+                        <div class="day-jobs" id="tuesday-jobs" ondrop="dropJob(event, 'tuesday')" ondragover="allowDrop(event)" ondragleave="clearDrop(event)"></div>
                     </div>
                     <div class="day-column" data-day="wednesday">
                         <div class="day-header">Wednesday</div>
-                        <div class="day-jobs" ondrop="dropJob(event, 'wednesday')" ondragover="allowDrop(event)"></div>
+                        <div class="day-jobs" id="wednesday-jobs" ondrop="dropJob(event, 'wednesday')" ondragover="allowDrop(event)" ondragleave="clearDrop(event)"></div>
                     </div>
                     <div class="day-column" data-day="thursday">
                         <div class="day-header">Thursday</div>
-                        <div class="day-jobs" ondrop="dropJob(event, 'thursday')" ondragover="allowDrop(event)"></div>
+                        <div class="day-jobs" id="thursday-jobs" ondrop="dropJob(event, 'thursday')" ondragover="allowDrop(event)" ondragleave="clearDrop(event)"></div>
                     </div>
                     <div class="day-column" data-day="friday">
                         <div class="day-header">Friday</div>
-                        <div class="day-jobs" ondrop="dropJob(event, 'friday')" ondragover="allowDrop(event)"></div>
+                        <div class="day-jobs" id="friday-jobs" ondrop="dropJob(event, 'friday')" ondragover="allowDrop(event)" ondragleave="clearDrop(event)"></div>
                     </div>
                 </div>
+                <!-- Add this AI Suggestions Panel -->
+                <div style="padding: 15px; background: #f0f9ff; border-top: 2px solid #0284c7; margin-top: 20px;">
+                    <h3 style="margin: 0 0 10px 0; color: #0c4a6e;">🤖 AI Suggestions</h3>
+                    <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                        <button onclick="suggestNearbyJobs()" style="background: #0ea5e9;">Find Nearby Jobs</button>
+                        <button onclick="suggestBestFit()" style="background: #10b981;">Best Fit Jobs</button>
+                        <button onclick="optimizeWeek()" style="background: #8b5cf6;">Optimize Week</button>
+                    </div>
+                    <div id="suggestions" style="max-height: 200px; overflow-y: auto;">
+                        <p style="color: #64748b; font-style: italic;">Select a technician and click a suggestion type</p>
+                    </div>
+                </div>
+
                 <div class="panel-content" id="tech-list">
                     <!-- Tech info appears here -->
                 </div>
@@ -440,14 +453,30 @@
             event.dataTransfer.setData('job', JSON.stringify(job));
         }
         
+        // Fixed drag and drop functions
         function allowDrop(event) {
             event.preventDefault();
-            event.target.style.background = '#dbeafe';
+            event.stopPropagation();
+            // Highlight the drop zone
+            const dropZone = event.currentTarget;
+            dropZone.style.background = '#dbeafe';
+            dropZone.style.border = '2px dashed #3b82f6';
         }
-        
+
+        function clearDrop(event) {
+            const dropZone = event.currentTarget;
+            dropZone.style.background = '';
+            dropZone.style.border = '';
+        }
+
         function dropJob(event, day) {
             event.preventDefault();
-            event.target.style.background = '';
+            event.stopPropagation();
+            
+            // Clear the highlight
+            const dropZone = event.currentTarget;
+            dropZone.style.background = '';
+            dropZone.style.border = '';
             
             if (!selectedTech) {
                 alert('Please select a technician first');
@@ -461,7 +490,7 @@
                 .reduce((sum, j) => sum + (j.est_hours || 2), 0);
             
             if (dayHours + (job.est_hours || 2) > selectedTech.max_daily_hours) {
-                alert(`This exceeds ${selectedTech.name}'s daily capacity`);
+                alert(`This exceeds ${selectedTech.name}'s daily capacity of ${selectedTech.max_daily_hours} hours`);
                 return;
             }
             
@@ -473,6 +502,7 @@
             displayJobs();
             plotJobsOnMap();
             updateStats();
+
             
             // Mark job card as scheduled
             const jobCard = document.getElementById(`job-${job.work_order}`);
@@ -529,6 +559,270 @@
         window.onload = function() {
             initMap();
             loadTechs();
+        }
+                // AI Suggestion Functions
+        function suggestNearbyJobs() {
+            if (!selectedTech) {
+                alert('Please select a technician first');
+                return;
+            }
+            
+            const suggestionsDiv = document.getElementById('suggestions');
+            suggestionsDiv.innerHTML = '<p>🔍 Finding nearby jobs...</p>';
+            
+            // Get tech's scheduled jobs
+            const scheduledJobs = [];
+            for (let day in schedules[selectedTech.technician_id]) {
+                scheduledJobs.push(...schedules[selectedTech.technician_id][day]);
+            }
+            
+            if (scheduledJobs.length === 0) {
+                suggestionsDiv.innerHTML = '<p>⚠️ Schedule some jobs first, then I can find nearby ones!</p>';
+                return;
+            }
+            
+            // Find unscheduled jobs near scheduled ones
+            const unscheduledJobs = jobs.filter(j => !isJobScheduled(j.work_order));
+            const suggestions = [];
+            
+            scheduledJobs.forEach(schedJob => {
+                if (!schedJob.latitude || !schedJob.longitude) return;
+                
+                unscheduledJobs.forEach(job => {
+                    if (!job.latitude || !job.longitude) return;
+                    
+                    const distance = calculateDistance(
+                        schedJob.latitude, schedJob.longitude,
+                        job.latitude, job.longitude
+                    );
+                    
+                    if (distance < 20) { // Within 20 miles
+                        suggestions.push({
+                            job: job,
+                            nearJob: schedJob,
+                            distance: distance
+                        });
+                    }
+                });
+            });
+            
+            // Sort by distance and show top 5
+            suggestions.sort((a, b) => a.distance - b.distance);
+            const top5 = suggestions.slice(0, 5);
+            
+            if (top5.length === 0) {
+                suggestionsDiv.innerHTML = '<p>No nearby jobs found within 20 miles of scheduled jobs</p>';
+                return;
+            }
+            
+            let html = '<div style="color: #0c4a6e;"><strong>📍 Nearby Jobs (within 20 miles):</strong></div>';
+            top5.forEach(s => {
+                html += `
+                    <div style="padding: 8px; margin: 5px 0; background: white; border-radius: 4px; border-left: 3px solid #0ea5e9;">
+                        <strong>WO ${s.job.work_order}</strong> - ${s.job.site_name}<br>
+                        <small>📏 ${s.distance.toFixed(1)} miles from WO ${s.nearJob.work_order}</small><br>
+                        <small>⏱️ ${s.job.est_hours || 2} hours</small>
+                        <button onclick='quickAddJob(${JSON.stringify(s.job)})' style='margin-top: 5px; padding: 4px 8px; font-size: 12px;'>
+                            + Add to Schedule
+                        </button>
+                    </div>
+                `;
+            });
+            
+            suggestionsDiv.innerHTML = html;
+        }
+
+        function suggestBestFit() {
+            if (!selectedTech) {
+                alert('Please select a technician first');
+                return;
+            }
+            
+            const suggestionsDiv = document.getElementById('suggestions');
+            suggestionsDiv.innerHTML = '<p>🔍 Finding best fit jobs...</p>';
+            
+            // Calculate remaining capacity per day
+            const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
+            const capacity = {};
+            
+            days.forEach(day => {
+                const used = schedules[selectedTech.technician_id][day]
+                    .reduce((sum, j) => sum + (j.est_hours || 2), 0);
+                capacity[day] = selectedTech.max_daily_hours - used;
+            });
+            
+            // Find jobs that fit in available slots
+            const unscheduledJobs = jobs.filter(j => !isJobScheduled(j.work_order));
+            const fits = [];
+            
+            unscheduledJobs.forEach(job => {
+                const jobHours = job.est_hours || 2;
+                
+                days.forEach(day => {
+                    if (capacity[day] >= jobHours) {
+                        // Check if near tech's home
+                        if (selectedTech.home_latitude && job.latitude) {
+                            const distanceFromHome = calculateDistance(
+                                selectedTech.home_latitude, selectedTech.home_longitude,
+                                job.latitude, job.longitude
+                            );
+                            
+                            if (distanceFromHome < 50) { // Within 50 miles of home
+                                fits.push({
+                                    job: job,
+                                    day: day,
+                                    remainingCapacity: capacity[day],
+                                    distanceFromHome: distanceFromHome,
+                                    score: (50 - distanceFromHome) + (jobHours * 10) // Prioritize closer and longer jobs
+                                });
+                            }
+                        }
+                    }
+                });
+            });
+            
+            // Sort by score and show top 5
+            fits.sort((a, b) => b.score - a.score);
+            const top5 = fits.slice(0, 5);
+            
+            if (top5.length === 0) {
+                suggestionsDiv.innerHTML = '<p>No jobs found that fit remaining capacity within 50 miles</p>';
+                return;
+            }
+            
+            let html = '<div style="color: #0c4a6e;"><strong>✨ Best Fit Jobs:</strong></div>';
+            top5.forEach(f => {
+                html += `
+                    <div style="padding: 8px; margin: 5px 0; background: white; border-radius: 4px; border-left: 3px solid #10b981;">
+                        <strong>WO ${f.job.work_order}</strong> - ${f.job.site_name}<br>
+                        <small>📅 Fits on ${f.day.charAt(0).toUpperCase() + f.day.slice(1)}</small><br>
+                        <small>🏠 ${f.distanceFromHome.toFixed(1)} miles from home</small><br>
+                        <small>⏱️ ${f.job.est_hours || 2}h (${f.remainingCapacity}h available)</small>
+                        <button onclick='quickAddJobToDay(${JSON.stringify(f.job)}, "${f.day}")' style='margin-top: 5px; padding: 4px 8px; font-size: 12px;'>
+                            + Add to ${f.day}
+                        </button>
+                    </div>
+                `;
+            });
+            
+            suggestionsDiv.innerHTML = html;
+        }
+
+        function optimizeWeek() {
+            if (!selectedTech) {
+                alert('Please select a technician first');
+                return;
+            }
+            
+            const suggestionsDiv = document.getElementById('suggestions');
+            
+            // Calculate current efficiency
+            const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
+            let totalTravel = 0;
+            let totalHours = 0;
+            let emptyDays = 0;
+            
+            days.forEach(day => {
+                const dayJobs = schedules[selectedTech.technician_id][day];
+                if (dayJobs.length === 0) {
+                    emptyDays++;
+                } else {
+                    dayJobs.forEach(j => totalHours += (j.est_hours || 2));
+                    
+                    // Calculate travel between jobs
+                    for (let i = 1; i < dayJobs.length; i++) {
+                        if (dayJobs[i-1].latitude && dayJobs[i].latitude) {
+                            totalTravel += calculateDistance(
+                                dayJobs[i-1].latitude, dayJobs[i-1].longitude,
+                                dayJobs[i].latitude, dayJobs[i].longitude
+                            );
+                        }
+                    }
+                }
+            });
+            
+            const efficiency = totalHours > 0 ? 
+                ((totalHours / (totalHours + totalTravel/25)) * 100).toFixed(1) : 0;
+            
+            let html = `
+                <div style="padding: 10px; background: white; border-radius: 6px;">
+                    <h4 style="color: #7c3aed; margin: 0 0 10px 0;">📊 Week Analysis</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                        <div>
+                            <strong>Total Hours:</strong> ${totalHours.toFixed(1)}h<br>
+                            <strong>Travel Distance:</strong> ${totalTravel.toFixed(0)} miles<br>
+                        </div>
+                        <div>
+                            <strong>Efficiency:</strong> ${efficiency}%<br>
+                            <strong>Empty Days:</strong> ${emptyDays}<br>
+                        </div>
+                    </div>
+                    <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #e5e7eb;">
+                        <strong>💡 Recommendations:</strong><br>
+            `;
+            
+            if (emptyDays > 2) {
+                html += `• Consider consolidating jobs to fewer days<br>`;
+            }
+            if (totalTravel > 200) {
+                html += `• High travel distance - group jobs by area<br>`;
+            }
+            if (efficiency < 70) {
+                html += `• Low efficiency - use "Find Nearby Jobs" to reduce travel<br>`;
+            }
+            if (totalHours < selectedTech.max_weekly_hours * 0.7) {
+                html += `• ${(selectedTech.max_weekly_hours - totalHours).toFixed(1)}h capacity remaining<br>`;
+            }
+            
+            html += `
+                    </div>
+                </div>
+            `;
+            
+            suggestionsDiv.innerHTML = html;
+        }
+
+        // Helper functions
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            // Simple distance calculation (Haversine formula)
+            const R = 3958.8; // Earth radius in miles
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                    Math.sin(dLon/2) * Math.sin(dLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+
+        function quickAddJob(job) {
+            // Find best day for this job
+            const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
+            
+            for (let day of days) {
+                const dayHours = schedules[selectedTech.technician_id][day]
+                    .reduce((sum, j) => sum + (j.est_hours || 2), 0);
+                
+                if (dayHours + (job.est_hours || 2) <= selectedTech.max_daily_hours) {
+                    schedules[selectedTech.technician_id][day].push(job);
+                    updateScheduleDisplay();
+                    displayJobs();
+                    plotJobsOnMap();
+                    updateStats();
+                    alert(`Added WO ${job.work_order} to ${day}`);
+                    return;
+                }
+            }
+            
+            alert('No capacity available this week for this job');
+        }
+
+        function quickAddJobToDay(job, day) {
+            schedules[selectedTech.technician_id][day].push(job);
+            updateScheduleDisplay();
+            displayJobs();
+            plotJobsOnMap();
+            updateStats();
         };
     </script>
 </body>
