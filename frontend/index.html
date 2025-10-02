@@ -9,6 +9,7 @@
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: #f5f7fa;
+            overflow: hidden;
         }
         
         .header {
@@ -16,234 +17,491 @@
             color: white;
             padding: 1rem 2rem;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        
-        .container {
             display: flex;
-            height: calc(100vh - 60px);
+            justify-content: space-between;
+            align-items: center;
+            height: 60px;
+        }
+
+        .nav-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .nav-btn {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 4px;
+            text-decoration: none;
+            border: 1px solid rgba(255,255,255,0.3);
+        }
+
+        .nav-btn:hover {
+            background: rgba(255,255,255,0.3);
         }
         
-        /* Left Panel - Unassigned Jobs */
-        .jobs-panel {
-            width: 350px;
-            background: white;
-            border-right: 1px solid #e1e4e8;
+        /* Main Layout - Map on top, panels below */
+        .main-container {
+            height: calc(100vh - 60px);
             display: flex;
             flex-direction: column;
         }
-        
+
+        /* Top Section - Map or Schedule View */
+        .map-section {
+            height: 50%;
+            position: relative;
+            border-bottom: 2px solid #dee2e6;
+        }
+
+        #map {
+            height: 100%;
+            width: 100%;
+        }
+
+        /* Schedule View (hidden by default) */
+        .schedule-view {
+            height: 100%;
+            background: white;
+            display: none;
+            overflow-y: auto;
+        }
+
+        .schedule-week {
+            display: grid;
+            grid-template-columns: 150px repeat(5, 1fr);
+            gap: 0;
+            height: 100%;
+            padding: 10px;
+        }
+
+        .schedule-header {
+            display: contents;
+        }
+
+        .time-column {
+            background: #f8f9fa;
+            border-right: 2px solid #dee2e6;
+            padding: 10px;
+        }
+
+        .time-slot {
+            height: 60px;
+            border-bottom: 1px solid #e9ecef;
+            padding: 5px;
+            font-size: 12px;
+            color: #6c757d;
+        }
+
+        .day-column {
+            border-right: 1px solid #dee2e6;
+            background: white;
+            position: relative;
+        }
+
+        .day-column-header {
+            background: #667eea;
+            color: white;
+            padding: 10px;
+            text-align: center;
+            font-weight: bold;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .day-schedule {
+            min-height: 400px;
+            position: relative;
+        }
+
+        .day-drop-zone {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+        }
+
+        .day-drop-zone.drag-over {
+            background: rgba(102, 126, 234, 0.1);
+            border: 2px dashed #667eea;
+        }
+
+        .scheduled-job {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 8px;
+            margin: 5px;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: move;
+        }
+
+        /* Bottom Section - Split between Jobs and Techs */
+        .bottom-section {
+            height: 50%;
+            display: flex;
+            background: white;
+        }
+
+        /* Left Panel - Unassigned Jobs */
+        .jobs-panel {
+            width: 50%;
+            border-right: 2px solid #dee2e6;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Right Panel - Technicians */
+        .tech-panel {
+            width: 50%;
+            display: flex;
+            flex-direction: column;
+        }
+
         .panel-header {
             padding: 1rem;
+            background: #f8f9fa;
             border-bottom: 1px solid #e1e4e8;
-            background: #fafbfc;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
-        
-        .job-filters {
-            padding: 1rem;
-            border-bottom: 1px solid #e1e4e8;
+
+        .panel-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+            padding: 0 1rem;
         }
-        
-        .job-list {
+
+        .panel-controls input, .panel-controls select, .panel-controls button {
+            padding: 6px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .panel-controls button {
+            background: #667eea;
+            color: white;
+            cursor: pointer;
+        }
+
+        .panel-controls button:hover {
+            background: #5a67d8;
+        }
+
+        .job-list, .tech-list {
             flex: 1;
             overflow-y: auto;
             padding: 1rem;
         }
-        
+
         .job-card {
-            background: #fff;
+            background: white;
             border: 2px solid #e1e4e8;
             border-radius: 8px;
-            padding: 12px;
-            margin-bottom: 10px;
+            padding: 10px;
+            margin-bottom: 8px;
             cursor: move;
             transition: all 0.2s;
         }
-        
+
         .job-card:hover {
             border-color: #667eea;
-            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.1);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
         }
-        
+
         .job-card.urgent {
-            border-left: 4px solid #f56565;
+            border-left: 4px solid #dc3545;
         }
-        
+
         .job-card.dragging {
             opacity: 0.5;
         }
-        
-        /* Center - Map */
-        #map {
-            flex: 1;
-            position: relative;
+
+        .job-card-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
         }
-        
-        /* Right Panel - Technicians */
-        .tech-panel {
-            width: 300px;
-            background: white;
-            border-left: 1px solid #e1e4e8;
-            overflow-y: auto;
+
+        .job-wo {
+            font-weight: bold;
+            color: #495057;
         }
-        
+
+        .job-hours {
+            background: #e9ecef;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
         .tech-card {
-            padding: 1rem;
-            border-bottom: 1px solid #e1e4e8;
+            background: white;
+            border: 2px solid #e1e4e8;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 8px;
             cursor: pointer;
-            transition: background 0.2s;
+            transition: all 0.2s;
         }
-        
+
         .tech-card:hover {
-            background: #f6f8fa;
+            background: #f8f9fa;
+            border-color: #667eea;
         }
-        
+
         .tech-card.selected {
             background: #e7f3ff;
-            border-left: 3px solid #667eea;
+            border-color: #667eea;
+            border-width: 2px;
         }
-        
-        .tech-capacity {
+
+        .tech-card.drop-active {
+            background: #d4edda;
+            border-color: #28a745;
+        }
+
+        .tech-name {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .tech-stats {
+            display: flex;
+            justify-content: space-between;
             margin-top: 8px;
-            background: #f0f0f0;
-            border-radius: 4px;
+        }
+
+        .tech-capacity {
+            width: 100%;
             height: 8px;
+            background: #e9ecef;
+            border-radius: 4px;
+            margin-top: 5px;
             overflow: hidden;
         }
-        
-        .tech-capacity-fill {
+
+        .capacity-fill {
             height: 100%;
-            background: #48bb78;
+            background: linear-gradient(90deg, #28a745, #20c997);
             transition: width 0.3s;
         }
-        
+
+        .capacity-fill.warning {
+            background: linear-gradient(90deg, #ffc107, #fd7e14);
+        }
+
+        .capacity-fill.danger {
+            background: linear-gradient(90deg, #dc3545, #c82333);
+        }
+
         .stats-bar {
             display: flex;
             gap: 2rem;
-            padding: 1rem;
+            padding: 10px 1rem;
             background: #fafbfc;
             border-bottom: 1px solid #e1e4e8;
         }
-        
+
         .stat {
             display: flex;
-            flex-direction: column;
+            align-items: center;
+            gap: 10px;
         }
-        
+
         .stat-value {
-            font-size: 24px;
+            font-size: 20px;
             font-weight: bold;
             color: #667eea;
         }
-        
+
         .stat-label {
             font-size: 12px;
-            color: #6a737d;
-            text-transform: uppercase;
+            color: #6c757d;
+        }
+
+        .toggle-view {
+            display: flex;
+            gap: 5px;
+            margin-left: auto;
+        }
+
+        .toggle-btn {
+            padding: 6px 12px;
+            background: white;
+            border: 1px solid #dee2e6;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .toggle-btn.active {
+            background: #667eea;
+            color: white;
+        }
+
+        .toggle-btn:first-child {
+            border-radius: 4px 0 0 4px;
+        }
+
+        .toggle-btn:last-child {
+            border-radius: 0 4px 4px 0;
         }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>📍 Job Scheduler</h1>
+        <h1>📍 Job Assignment Dashboard</h1>
         <nav class="nav-buttons">
             <a href="/" class="nav-btn">Dashboard</a>
             <a href="/static/analysis.html" class="nav-btn">Analysis</a>
             <a href="/static/schedule-editor.html" class="nav-btn">Schedule Editor</a>
-            <button onclick="showTimeOffModal()" class="nav-btn">Manage Time Off</button>
         </nav>
     </div>
-
-    <style>
-    .nav-buttons {
-        display: flex;
-        gap: 10px;
-        margin-left: auto;
-    }
-
-    .nav-btn {
-        background: rgba(255,255,255,0.2);
-        color: white;
-        padding: 8px 16px;
-        border-radius: 4px;
-        text-decoration: none;
-        border: 1px solid rgba(255,255,255,0.3);
-        cursor: pointer;
-    }
-
-    .nav-btn:hover {
-        background: rgba(255,255,255,0.3);
-    }
-
-    .problem-card {
-        background: #f8f9fa;
-        padding: 10px;
-        margin: 10px 0;
-        border-radius: 4px;
-        border-left: 3px solid #ffc107;
-    }
-
-    .closest-techs {
-        margin-top: 8px;
-        padding: 8px;
-        background: white;
-        border-radius: 4px;
-        font-size: 12px;
-    }
-    </style>
     
-    <div class="container">
-        <!-- Left: Unassigned Jobs -->
-        <div class="jobs-panel">
-            <div class="panel-header">
-                <h3>Unassigned Jobs</h3>
-            </div>
-            <div class="job-filters">
-                <input type="date" id="start-date" value="2025-01-01">
-                <input type="date" id="end-date" value="2025-01-31">
-                <button onclick="loadUnassignedJobs()">Load Jobs</button>
-            </div>
-            <div class="stats-bar">
-                <div class="stat">
-                    <span class="stat-value" id="total-jobs">0</span>
-                    <span class="stat-label">Total Jobs</span>
+    <div class="main-container">
+        <!-- Top Section: Map or Schedule View -->
+        <div class="map-section">
+            <div id="map"></div>
+            <div class="schedule-view" id="schedule-view">
+                <div class="schedule-week">
+                    <div class="time-column">
+                        <div style="height: 40px;"></div>
+                        <div class="time-slot">8:00 AM</div>
+                        <div class="time-slot">10:00 AM</div>
+                        <div class="time-slot">12:00 PM</div>
+                        <div class="time-slot">2:00 PM</div>
+                        <div class="time-slot">4:00 PM</div>
+                        <div class="time-slot">6:00 PM</div>
+                    </div>
+                    <div class="day-column" data-day="monday">
+                        <div class="day-column-header">Monday</div>
+                        <div class="day-schedule">
+                            <div class="day-drop-zone"></div>
+                        </div>
+                    </div>
+                    <div class="day-column" data-day="tuesday">
+                        <div class="day-column-header">Tuesday</div>
+                        <div class="day-schedule">
+                            <div class="day-drop-zone"></div>
+                        </div>
+                    </div>
+                    <div class="day-column" data-day="wednesday">
+                        <div class="day-column-header">Wednesday</div>
+                        <div class="day-schedule">
+                            <div class="day-drop-zone"></div>
+                        </div>
+                    </div>
+                    <div class="day-column" data-day="thursday">
+                        <div class="day-column-header">Thursday</div>
+                        <div class="day-schedule">
+                            <div class="day-drop-zone"></div>
+                        </div>
+                    </div>
+                    <div class="day-column" data-day="friday">
+                        <div class="day-column-header">Friday</div>
+                        <div class="day-schedule">
+                            <div class="day-drop-zone"></div>
+                        </div>
+                    </div>
                 </div>
-                <div class="stat">
-                    <span class="stat-value" id="urgent-jobs">0</span>
-                    <span class="stat-label">Urgent</span>
-                </div>
-            </div>
-            <div id="job-list" class="job-list">
-                <!-- Jobs will appear here -->
             </div>
         </div>
-        
-        <!-- Center: Map -->
-        <div id="map"></div>
-        
-        <!-- Right: Technicians -->
-        <div class="tech-panel">
-            <div class="panel-header">
-                <h3>Available Technicians</h3>
+
+        <!-- Bottom Section: Jobs and Techs -->
+        <div class="bottom-section">
+            <!-- Left: Unassigned Jobs -->
+            <div class="jobs-panel">
+                <div class="panel-header">
+                    <h3>Unassigned Jobs (<span id="job-count">0</span>)</h3>
+                    <div class="toggle-view">
+                        <button class="toggle-btn active" onclick="showMapView()">Map</button>
+                        <button class="toggle-btn" onclick="showScheduleView()">Schedule</button>
+                    </div>
+                </div>
+                <div class="panel-controls">
+                    <input type="date" id="start-date" value="2025-09-01">
+                    <input type="date" id="end-date" value="2025-09-30">
+                    <button onclick="loadUnassignedJobs()">Load Jobs</button>
+                </div>
+                <div class="stats-bar">
+                    <div class="stat">
+                        <span class="stat-label">Urgent:</span>
+                        <span class="stat-value" id="urgent-count">0</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Total Hours:</span>
+                        <span class="stat-value" id="total-hours">0</span>
+                    </div>
+                </div>
+                <div id="job-list" class="job-list">
+                    <!-- Jobs will appear here -->
+                </div>
             </div>
-            <div id="tech-list">
-                <!-- Techs will appear here -->
+            
+            <!-- Right: Technicians -->
+            <div class="tech-panel">
+                <div class="panel-header">
+                    <h3>Available Technicians (<span id="tech-count">0</span>)</h3>
+                    <div>
+                        Week: <input type="week" id="week-select" value="2025-W36" style="margin-left: 10px;">
+                    </div>
+                </div>
+                <div class="stats-bar">
+                    <div class="stat">
+                        <span class="stat-label">Total Capacity:</span>
+                        <span class="stat-value" id="total-capacity">0h</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Scheduled:</span>
+                        <span class="stat-value" id="total-scheduled">0h</span>
+                    </div>
+                </div>
+                <div id="tech-list" class="tech-list">
+                    <!-- Techs will appear here -->
+                </div>
             </div>
         </div>
     </div>
     
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script>
-        const API_KEY = 'devkey123'
+        const API_KEY = 'devkey123';
         let map;
         let jobMarkers = [];
         let techMarkers = [];
-        let selectedTech = null;
         let unassignedJobs = [];
+        let technicians = [];
+        let selectedTech = null;
+        let weekSchedules = {};
+        let currentView = 'map';
         
-        // Initialize map centered on Colorado
+        // Initialize map
         function initMap() {
             map = L.map('map').setView([39.0, -105.5], 7);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        }
+        
+        // Toggle between map and schedule view
+        function showMapView() {
+            currentView = 'map';
+            document.getElementById('map').style.display = 'block';
+            document.getElementById('schedule-view').style.display = 'none';
+            document.querySelectorAll('.toggle-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.toggle-btn')[0].classList.add('active');
+        }
+        
+        function showScheduleView() {
+            currentView = 'schedule';
+            document.getElementById('map').style.display = 'none';
+            document.getElementById('schedule-view').style.display = 'block';
+            document.querySelectorAll('.toggle-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.toggle-btn')[1].classList.add('active');
         }
         
         async function loadUnassignedJobs() {
@@ -251,37 +509,25 @@
             const endDate = document.getElementById('end-date').value;
             
             try {
-                // First try the new endpoint
-                let response = await fetch(
-                    `/jobs/available?start_date=${startDate}&end_date=${endDate}`,
-                    {
-                        headers: {'X-API-Key': API_KEY}
-                    }
+                const response = await fetch(
+                    `/jobs/pool?start=${startDate}&end=${endDate}&statuses=Call,Waiting to Schedule&limit=500`,
+                    { headers: {'X-API-Key': API_KEY} }
                 );
                 
-                // If that fails, fall back to jobs/pool
-                if (!response.ok) {
-                    console.log('Falling back to /jobs/pool endpoint');
-                    response = await fetch(
-                        `/jobs/pool?start=${startDate}&end=${endDate}&statuses=Call,Waiting to Schedule&limit=500`,
-                        {
-                            headers: {'X-API-Key': API_KEY}
-                        }
-                    );
-                }
-                
                 const data = await response.json();
-                
                 unassignedJobs = data.jobs;
                 displayJobs(unassignedJobs);
                 plotJobsOnMap(unassignedJobs);
                 
                 // Update stats
-                document.getElementById('total-jobs').textContent = data.count;
+                document.getElementById('job-count').textContent = data.count;
                 const urgentCount = unassignedJobs.filter(j => 
                     j.jp_priority === 'NOV' || j.jp_priority === 'Urgent'
                 ).length;
-                document.getElementById('urgent-jobs').textContent = urgentCount;
+                document.getElementById('urgent-count').textContent = urgentCount;
+                
+                const totalHours = unassignedJobs.reduce((sum, j) => sum + (j.est_hours || 2), 0);
+                document.getElementById('total-hours').textContent = totalHours.toFixed(1);
                 
             } catch (error) {
                 console.error('Error loading jobs:', error);
@@ -298,15 +544,22 @@
                 const isUrgent = job.jp_priority === 'NOV' || job.jp_priority === 'Urgent';
                 card.className = `job-card ${isUrgent ? 'urgent' : ''}`;
                 card.draggable = true;
+                card.dataset.jobId = job.work_order;
                 
                 card.innerHTML = `
-                    <strong>WO ${job.work_order}</strong><br>
-                    <small>${job.site_name}</small><br>
-                    <small>${job.site_city}, ${job.site_state}</small><br>
-                    <small>Due: ${new Date(job.due_date).toLocaleDateString()}</small>
-                    ${isUrgent ? '<br><span style="color: red;">⚠️ URGENT</span>' : ''}
+                    <div class="job-card-header">
+                        <span class="job-wo">WO ${job.work_order}</span>
+                        <span class="job-hours">${job.est_hours || 2}h</span>
+                    </div>
+                    <div style="font-size: 13px; color: #666;">
+                        ${job.site_name}<br>
+                        ${job.site_city}, ${job.site_state}<br>
+                        Due: ${new Date(job.due_date).toLocaleDateString()}
+                        ${isUrgent ? '<br><span style="color: red;">⚠️ URGENT</span>' : ''}
+                    </div>
                 `;
                 
+                // Drag events
                 card.addEventListener('dragstart', (e) => {
                     e.dataTransfer.setData('job', JSON.stringify(job));
                     card.classList.add('dragging');
@@ -340,102 +593,279 @@
                         <strong>${job.site_name}</strong><br>
                         WO: ${job.work_order}<br>
                         ${job.site_city}, ${job.site_state}<br>
-                        Due: ${new Date(job.due_date).toLocaleDateString()}
+                        Due: ${new Date(job.due_date).toLocaleDateString()}<br>
+                        Est: ${job.est_hours || 2} hours
                     `);
                     
                     jobMarkers.push(marker);
                 }
             });
-            
-            // Fit map to show all jobs
-            if (jobMarkers.length > 0) {
-                const group = new L.featureGroup(jobMarkers);
-                map.fitBounds(group.getBounds().pad(0.1));
-            }
         }
         
         async function loadTechnicians() {
             try {
-                const response = await fetch('/technicians?active_only=true', {headers: {'X-API-Key':API_KEY}});
-                const data = await response.json();
-           
-                const container = document.getElementById('tech-list');
-                container.innerHTML = '';
-                
-                data.technicians.forEach(tech => {
-                    const card = document.createElement('div');
-                    card.className = 'tech-card';
-                    card.innerHTML = `
-                        <strong>${tech.name}</strong><br>
-                        <small>📍 ${tech.home_location}</small><br>
-                        <small>Max Hours: ${tech.max_weekly_hours}/week</small>
-                        <div class="tech-capacity">
-                            <div class="tech-capacity-fill" style="width: 0%"></div>
-                        </div>
-                    `;
-                    
-                    card.addEventListener('click', () => selectTechnician(tech, card));
-                    
-                    card.addEventListener('dragover', (e) => {
-                        e.preventDefault();
-                        card.style.background = '#e7f3ff';
-                    });
-                    
-                    card.addEventListener('dragleave', () => {
-                        card.style.background = '';
-                    });
-                    
-                    card.addEventListener('drop', (e) => {
-                        e.preventDefault();
-                        card.style.background = '';
-                        const job = JSON.parse(e.dataTransfer.getData('job'));
-                        assignJobToTech(job, tech);
-                    });
-                    
-                    container.appendChild(card);
-                    
-                    // Add tech marker to map
-                    if (tech.home_latitude && tech.home_longitude) {
-                        const marker = L.marker([tech.home_latitude, tech.home_longitude], {
-                            icon: L.divIcon({
-                                className: 'tech-marker',
-                                html: `<div style="background: green; color: white; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">${tech.name.split(' ').map(n => n[0]).join('')}</div>`
-                            })
-                        }).addTo(map);
-                        
-                        marker.bindPopup(`<strong>${tech.name}</strong><br>${tech.home_location}`);
-                        techMarkers.push(marker);
-                    }
+                const response = await fetch('/technicians?active_only=true', {
+                    headers: {'X-API-Key': API_KEY}
                 });
+                const data = await response.json();
+                
+                technicians = data.technicians;
+                displayTechnicians(technicians);
+                plotTechsOnMap(technicians);
+                
+                document.getElementById('tech-count').textContent = technicians.length;
+                const totalCapacity = technicians.reduce((sum, t) => sum + (t.max_weekly_hours || 40), 0);
+                document.getElementById('total-capacity').textContent = totalCapacity + 'h';
+                
             } catch (error) {
                 console.error('Error loading technicians:', error);
             }
         }
         
+        function displayTechnicians(techs) {
+            const container = document.getElementById('tech-list');
+            container.innerHTML = '';
+            
+            techs.forEach(tech => {
+                const card = document.createElement('div');
+                card.className = 'tech-card';
+                card.dataset.techId = tech.technician_id;
+                
+                // Initialize tech's weekly schedule if not exists
+                if (!weekSchedules[tech.technician_id]) {
+                    weekSchedules[tech.technician_id] = {
+                        monday: [],
+                        tuesday: [],
+                        wednesday: [],
+                        thursday: [],
+                        friday: []
+                    };
+                }
+                
+                const weekHours = calculateTechWeekHours(tech.technician_id);
+                const utilization = (weekHours / tech.max_weekly_hours) * 100;
+                
+                card.innerHTML = `
+                    <div class="tech-name">${tech.name}</div>
+                    <div style="font-size: 13px; color: #666;">
+                        📍 ${tech.home_location}<br>
+                        Max: ${tech.max_weekly_hours}h/week, ${tech.max_daily_hours}h/day
+                    </div>
+                    <div class="tech-stats">
+                        <span>Week: ${weekHours.toFixed(1)}h</span>
+                        <span>${utilization.toFixed(0)}%</span>
+                    </div>
+                    <div class="tech-capacity">
+                        <div class="capacity-fill ${utilization > 100 ? 'danger' : utilization > 80 ? 'warning' : ''}" 
+                             style="width: ${Math.min(utilization, 100)}%"></div>
+                    </div>
+                `;
+                
+                // Make tech card droppable
+                card.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    card.classList.add('drop-active');
+                });
+                
+                card.addEventListener('dragleave', () => {
+                    card.classList.remove('drop-active');
+                });
+                
+                card.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    card.classList.remove('drop-active');
+                    const job = JSON.parse(e.dataTransfer.getData('job'));
+                    
+                    // Quick assign to tech's next available day
+                    assignJobToTech(job, tech);
+                });
+                
+                card.addEventListener('click', () => {
+                    selectTechnician(tech, card);
+                });
+                
+                container.appendChild(card);
+            });
+        }
+        
+        function plotTechsOnMap(techs) {
+            techMarkers.forEach(m => map.removeLayer(m));
+            techMarkers = [];
+            
+            techs.forEach(tech => {
+                if (tech.home_latitude && tech.home_longitude) {
+                    const marker = L.marker([tech.home_latitude, tech.home_longitude], {
+                        icon: L.divIcon({
+                            className: 'tech-marker',
+                            html: `<div style="background: green; color: white; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">${tech.name.split(' ').map(n => n[0]).join('')}</div>`
+                        })
+                    }).addTo(map);
+                    
+                    marker.bindPopup(`<strong>${tech.name}</strong><br>${tech.home_location}`);
+                    techMarkers.push(marker);
+                }
+            });
+        }
+        
         function selectTechnician(tech, card) {
-            // Clear previous selection
             document.querySelectorAll('.tech-card').forEach(c => c.classList.remove('selected'));
             card.classList.add('selected');
             selectedTech = tech;
-            
-            // Could highlight eligible jobs for this tech
-            console.log('Selected tech:', tech);
         }
         
-        async function assignJobToTech(job, tech) {
-            console.log(`Assigning job ${job.work_order} to ${tech.name}`);
-            // Here you would call your scheduling API
-            alert(`Would assign WO ${job.work_order} to ${tech.name}\n(API call not implemented yet)`);
+        function calculateTechWeekHours(techId) {
+            const schedule = weekSchedules[techId];
+            if (!schedule) return 0;
+            
+            let total = 0;
+            Object.values(schedule).forEach(dayJobs => {
+                dayJobs.forEach(job => {
+                    total += job.est_hours || 2;
+                });
+            });
+            return total;
+        }
+        
+        function assignJobToTech(job, tech) {
+            // Find first available day
+            const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
+            const maxDaily = tech.max_daily_hours || 8;
+            
+            for (let day of days) {
+                const dayHours = weekSchedules[tech.technician_id][day].reduce((sum, j) => sum + (j.est_hours || 2), 0);
+                if (dayHours + (job.est_hours || 2) <= maxDaily) {
+                    // Assign to this day
+                    weekSchedules[tech.technician_id][day].push(job);
+                    
+                    // Remove from unassigned
+                    removeJobFromUnassigned(job.work_order);
+                    
+                    // Update displays
+                    updateScheduleDisplay();
+                    displayTechnicians(technicians);
+                    
+                    // Update total scheduled hours
+                    updateTotalScheduled();
+                    
+                    console.log(`Assigned WO ${job.work_order} to ${tech.name} on ${day}`);
+                    return;
+                }
+            }
+            
+            alert(`${tech.name} has no available capacity this week for this job.`);
+        }
+        
+        function removeJobFromUnassigned(workOrder) {
+            // Remove from array
+            unassignedJobs = unassignedJobs.filter(j => j.work_order !== workOrder);
+            
+            // Remove from display
+            const jobCard = document.querySelector(`.job-card[data-job-id="${workOrder}"]`);
+            if (jobCard) {
+                jobCard.remove();
+            }
+            
+            // Update count
+            document.getElementById('job-count').textContent = unassignedJobs.length;
+            
+            // Remove from map
+            plotJobsOnMap(unassignedJobs);
+        }
+        
+        function updateScheduleDisplay() {
+            if (currentView !== 'schedule') return;
+            
+            const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
+            
+            days.forEach(day => {
+                const dayColumn = document.querySelector(`.day-column[data-day="${day}"] .day-schedule`);
+                
+                // Clear existing jobs (keep drop zone)
+                dayColumn.querySelectorAll('.scheduled-job').forEach(el => el.remove());
+                
+                // Add all scheduled jobs for all techs
+                Object.keys(weekSchedules).forEach(techId => {
+                    const tech = technicians.find(t => t.technician_id == techId);
+                    const dayJobs = weekSchedules[techId][day];
+                    
+                    dayJobs.forEach(job => {
+                        const jobEl = document.createElement('div');
+                        jobEl.className = 'scheduled-job';
+                        jobEl.innerHTML = `
+                            <strong>${tech.name}</strong><br>
+                            WO ${job.work_order}<br>
+                            ${job.site_name}<br>
+                            ${job.est_hours || 2}h
+                        `;
+                        dayColumn.appendChild(jobEl);
+                    });
+                });
+            });
+        }
+        
+        function updateTotalScheduled() {
+            let totalScheduled = 0;
+            Object.values(weekSchedules).forEach(techSchedule => {
+                Object.values(techSchedule).forEach(dayJobs => {
+                    dayJobs.forEach(job => {
+                        totalScheduled += job.est_hours || 2;
+                    });
+                });
+            });
+            document.getElementById('total-scheduled').textContent = totalScheduled.toFixed(1) + 'h';
+        }
+        
+        // Setup drag and drop for schedule view
+        function setupScheduleDragDrop() {
+            document.querySelectorAll('.day-drop-zone').forEach(zone => {
+                zone.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    zone.classList.add('drag-over');
+                });
+                
+                zone.addEventListener('dragleave', () => {
+                    zone.classList.remove('drag-over');
+                });
+                
+                zone.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    zone.classList.remove('drag-over');
+                    
+                    const job = JSON.parse(e.dataTransfer.getData('job'));
+                    const day = zone.closest('.day-column').dataset.day;
+                    
+                    if (!selectedTech) {
+                        alert('Please select a technician first');
+                        return;
+                    }
+                    
+                    // Check capacity
+                    const dayHours = weekSchedules[selectedTech.technician_id][day].reduce((sum, j) => sum + (j.est_hours || 2), 0);
+                    if (dayHours + (job.est_hours || 2) > selectedTech.max_daily_hours) {
+                        alert(`This would exceed ${selectedTech.name}'s daily capacity`);
+                        return;
+                    }
+                    
+                    // Assign job
+                    weekSchedules[selectedTech.technician_id][day].push(job);
+                    removeJobFromUnassigned(job.work_order);
+                    updateScheduleDisplay();
+                    displayTechnicians(technicians);
+                    updateTotalScheduled();
+                });
+            });
         }
         
         // Initialize on load
         window.onload = function() {
             initMap();
             loadTechnicians();
+            setupScheduleDragDrop();
             
-            // Set default dates to September 2025 (where your jobs are)
-            document.getElementById('start-date').value = '2025-09-01';
-            document.getElementById('end-date').value = '2025-09-30';
+            // Set current week
+            const now = new Date();
+            const weekNum = Math.ceil(((now - new Date(now.getFullYear(), 0, 1)) / 86400000 + 1) / 7);
+            document.getElementById('week-select').value = `${now.getFullYear()}-W${weekNum.toString().padStart(2, '0')}`;
         };
     </script>
 </body>
