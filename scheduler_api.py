@@ -493,89 +493,163 @@ def analyze_monthly_jobs(
 ):
     _auth(x_api_key, None, None)
     
-    # Calculate the actual last day of the month
     import calendar
     last_day = calendar.monthrange(year, month)[1]
-    
-    # Get all jobs for the month
     month_start = f"{year}-{month:02d}-01"
-    month_end = f"{year}-{month:02d}-{last_day:02d}"  # Use actual last day
+    month_end = f"{year}-{month:02d}-{last_day:02d}"
+    
     jobs = sb_select("job_pool", filters=[
         ("due_date", "gte", month_start),
         ("due_date", "lte", month_end),
         ("jp_status", "in", ["Call", "Waiting to Schedule"])
     ])
     
-    # Get tech locations for distance calculations
+    # Get tech locations and capacity
     techs = sb_select("technicians", filters=[("active", "eq", True)])
     
-       
-    # Analyze problems
+    # Calculate total available manhours for the month
+    working_days = 20  # Approximate working days in a month
+    total_tech_hours = sum(
+        min(float(t.get("max_weekly_hours", 40)) * 4, 
+            float(t.get("max_daily_hours", 8)) * working_days)
+        for t in techs
+    )
+    
+    # Calculate total job hours needed
+    total_job_hours = sum(float(j.get("est_hours", 2)) for j in jobs)
+    
+    # Analyze problems with more detail
     problem_jobs = {
-        "remote_locations": [],  # >100 miles from nearest tech
-        "limited_eligibility": [],  # Only 1-2 techs qualified
+        "remote_locations": [],
+        "limited_eligibility": [],
         "night_jobs": [],
-        "friday_restricted": []  # King Soopers, City Market, Alta
+        "friday_restricted": []
     }
     
-    # Weekly distribution
+    # Weekly distribution with hours
     weekly_dist = {
-        "week_1": {"must_do": [], "should_do": []},
-        "week_2": {"must_do": [], "should_do": []},
-        "week_3": {"must_do": [], "should_do": []},
-        "week_4": {"must_do": [], "should_do": []},
+        f"week_{i}": {
+            "must_do": [], 
+            "should_do": [], 
+            "total_hours": 0,
+            "job_count": 0
+        } for i in range(1, 5)
     }
     
     for job in jobs:
-        # Check eligibility - IT'S ALREADY IN THE DATA!
-        if job.get("tech_count", 0) <= 2:
-            problem_jobs["limited_eligibility"].append({
-                "work_order": job["work_order"],
-                "site_name": job["site_name"],
-                "eligible_techs": job["tech_count"]
-            })
+        job_hours = float(job.get("est_hours", 2))
         
-        # Check remoteness
-        if techs:
-            min_distance = min([
-                haversine(t["home_latitude"], t["home_longitude"], 
-                         job["latitude"], job["longitude"])
-                for t in techs
-            ])
+        # Check remoteness with closest tech info
+        if techs and job.get("latitude") and job.get("longitude"):
+            distances = []
+            for t in techs:
+                if t.get("home_latitude") and t.get("home_longitude"):
+                    dist = haversine(
+                        t["home_latitude"], t["home_longitude"],
+                        job["latitude"], job["longitude"]
+                    )
+                    distances.append({
+                        "tech_name": t["name"],
+                        "tech_id": t["technician_id"],
+                        "distance": round(dist, 1),
+                        "home_location": t.get("home_location", "Unknown")
+                    })
+            
+            distances.sort(key=lambda x: x["distance"])
+            closest_techs = distances[:3]  # Top 3 closest techs
+            min_distance = distances[0]["distance"] if distances else 999
+            
             if min_distance > 100:
                 problem_jobs["remote_locations"].append({
                     "work_order": job["work_order"],
                     "site_name": job["site_name"],
-                    "distance": round(min_distance, 1)
+                    "location": f"{job.get('site_city', '')}, {job.get('site_state', '')}",
+                    "distance_to_nearest": round(min_distance, 1),
+                    "closest_techs": closest_techs,
+                    "est_hours": job_hours
                 })
+        
+        # Check eligibility
+        elig = sb_select("job_technician_eligibility", 
+                        filters=[("work_order", "eq", job["work_order"])])
+        if len(elig) <= 2:
+            eligible_names = []
+            for e in elig:
+                tech = next((t for t in techs if t["technician_id"] == e["technician_id"]), None)
+                if tech:
+                    eligible_names.append(tech["name"])
+            
+            problem_jobs["limited_eligibility"].append({
+                "work_order": job["work_order"],
+                "site_name": job["site_name"],
+                "eligible_techs": len(elig),
+                "tech_names": eligible_names,
+                "est_hours": job_hours
+            })
         
         # Check night jobs
         if job.get("is_night") or job.get("night_test"):
             problem_jobs["night_jobs"].append({
-                "work_order": job["work_order"], # Use job
-                "site_name": job["site_name"]
+                "work_order": job["work_order"],
+                "site_name": job["site_name"],
+                "est_hours": job_hours
             })
         
         # Check Friday restrictions
         if any(x in job.get("site_name", "") for x in ["King Soopers", "City Market", "Alta"]):
             problem_jobs["friday_restricted"].append({
                 "work_order": job["work_order"],
-                "site_name": job["site_name"]
+                "site_name": job["site_name"],
+                "est_hours": job_hours
             })
         
-        # Categorize by week
+        # Weekly distribution with hours
         due_date = pd.to_datetime(job["due_date"])
-        week_num = (due_date.day - 1) // 7 + 1
-        week_key = f"week_{min(week_num, 4)}"
+        week_num = min((due_date.day - 1) // 7 + 1, 4)
+        week_key = f"week_{week_num}"
+        
+        weekly_dist[week_key]["total_hours"] += job_hours
+        weekly_dist[week_key]["job_count"] += 1
         
         if job["jp_priority"] in ["NOV", "Urgent", "Monthly O&M"]:
-            weekly_dist[week_key]["must_do"].append(job["work_order"])
+            weekly_dist[week_key]["must_do"].append({
+                "work_order": job["work_order"],
+                "hours": job_hours
+            })
         else:
-            weekly_dist[week_key]["should_do"].append(job["work_order"])
+            weekly_dist[week_key]["should_do"].append({
+                "work_order": job["work_order"],
+                "hours": job_hours
+            })
     
-    # Summary stats
+    # Calculate suggested weekly targets
+    weekly_capacity = total_tech_hours / 4
+    suggested_weekly_targets = {}
+    remaining_hours = total_job_hours
+    
+    for week in range(1, 5):
+        week_key = f"week_{week}"
+        week_hours = weekly_dist[week_key]["total_hours"]
+        
+        # Suggest even distribution with priority on must-do jobs
+        if remaining_hours > 0:
+            target_hours = min(weekly_capacity * 0.85, remaining_hours)  # 85% capacity target
+            suggested_weekly_targets[week_key] = {
+                "target_hours": round(target_hours, 1),
+                "target_jobs": round(target_hours / 2.5, 0),  # Assume avg 2.5 hours per job
+                "actual_hours": round(week_hours, 1),
+                "capacity": round(weekly_capacity, 1)
+            }
+            remaining_hours -= week_hours
+    
+    # Summary with capacity analysis
     summary = {
         "total_jobs": len(jobs),
+        "total_job_hours": round(total_job_hours, 1),
+        "total_tech_capacity": round(total_tech_hours, 1),
+        "utilization_percent": round((total_job_hours / total_tech_hours * 100) if total_tech_hours > 0 else 0, 1),
+        "tech_count": len(techs),
+        "working_days": working_days,
         "problem_jobs_count": {
             "remote": len(problem_jobs["remote_locations"]),
             "limited_techs": len(problem_jobs["limited_eligibility"]),
@@ -585,8 +659,29 @@ def analyze_monthly_jobs(
         "weekly_summary": {
             k: {
                 "must_do": len(v["must_do"]),
-                "should_do": len(v["should_do"])
+                "should_do": len(v["should_do"]),
+                "total_hours": round(v["total_hours"], 1),
+                "job_count": v["job_count"]
             } for k, v in weekly_dist.items()
+        }
+    }
+    
+    return {
+        "summary": summary,
+        "problem_jobs": problem_jobs,
+        "weekly_distribution": weekly_dist,
+        "suggested_targets": suggested_weekly_targets,
+        "tech_capacity": {
+            "techs": [
+                {
+                    "name": t["name"],
+                    "weekly_hours": t.get("max_weekly_hours", 40),
+                    "monthly_capacity": min(
+                        float(t.get("max_weekly_hours", 40)) * 4,
+                        float(t.get("max_daily_hours", 8)) * working_days
+                    )
+                } for t in techs
+            ]
         }
     }
     

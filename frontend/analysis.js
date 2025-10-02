@@ -1,6 +1,6 @@
 // Monthly Analysis JavaScript
 const API_BASE = '/';
-const API_KEY = 'devkey123'
+const API_KEY = 'devkey123';
 
 async function runAnalysis() {
     const monthSelect = document.getElementById('month-select');
@@ -12,7 +12,8 @@ async function runAnalysis() {
     try {
         const response = await fetch(`${API_BASE}analysis/monthly?year=${year}&month=${month}`, {
             headers: {
-                'X-API-Key': API_KEY}
+                'X-API-Key': API_KEY
+            }
         });
 
         if (!response.ok) {
@@ -27,25 +28,38 @@ async function runAnalysis() {
     }
 }
 
-function showLoading() {
-    document.getElementById('total-jobs').textContent = 'Loading...';
-    document.getElementById('problem-counts').innerHTML = '<div class="loading">Analyzing...</div>';
-    document.getElementById('week-grid').innerHTML = '<div class="loading">Processing...</div>';
-    document.getElementById('problem-list').innerHTML = '';
-}
-
 function displayResults(data) {
-    // Summary cards
+    // Summary cards with capacity info
     document.getElementById('total-jobs').textContent = data.summary.total_jobs;
+    
+    // Add new capacity card
+    const summaryCards = document.getElementById('summary-cards');
+    summaryCards.innerHTML = `
+        <div class="card">
+            <h3>Total Jobs</h3>
+            <div class="big-number">${data.summary.total_jobs}</div>
+            <small>${data.summary.total_job_hours} hours needed</small>
+        </div>
+        <div class="card">
+            <h3>Tech Capacity</h3>
+            <div class="big-number">${data.summary.tech_count} techs</div>
+            <small>${data.summary.total_tech_capacity} hours available</small>
+        </div>
+        <div class="card ${data.summary.utilization_percent > 100 ? 'problem' : ''}">
+            <h3>Utilization</h3>
+            <div class="big-number">${data.summary.utilization_percent}%</div>
+            <small>${data.summary.utilization_percent > 100 ? '⚠️ OVERBOOKED' : '✅ Manageable'}</small>
+        </div>
+    `;
 
     // Problem counts
     const problemHtml = `
         <div class="problem-item">
-            <span class="label">Remote Jobs:</span>
+            <span class="label">Remote Jobs (>100mi):</span>
             <span class="count">${data.summary.problem_jobs_count.remote}</span>
         </div>
         <div class="problem-item">
-            <span class="label">Limited Techs:</span>
+            <span class="label">Limited Techs (≤2):</span>
             <span class="count">${data.summary.problem_jobs_count.limited_techs}</span>
         </div>
         <div class="problem-item">
@@ -59,65 +73,73 @@ function displayResults(data) {
     `;
     document.getElementById('problem-counts').innerHTML = problemHtml;
 
-    // Weekly matrix
-    let weekGridHtml = '<table class="week-table"><thead><tr><th>Week</th><th>Must Do</th><th>Should Do</th><th>Total</th></tr></thead><tbody>';
+    // Enhanced weekly matrix with targets
+    let weekGridHtml = `
+        <table class="week-table">
+            <thead>
+                <tr>
+                    <th>Week</th>
+                    <th>Must Do</th>
+                    <th>Should Do</th>
+                    <th>Total Hours</th>
+                    <th>Target Hours</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
 
     for (let i = 1; i <= 4; i++) {
         const week = data.summary.weekly_summary[`week_${i}`];
-        const total = week.must_do + week.should_do;
+        const target = data.suggested_targets[`week_${i}`];
+        const status = week.total_hours > target.capacity ? '🔴' : 
+                       week.total_hours > target.target_hours ? '🟡' : '🟢';
+        
         weekGridHtml += `
             <tr>
                 <td>Week ${i}</td>
                 <td class="must-do">${week.must_do}</td>
                 <td class="should-do">${week.should_do}</td>
-                <td class="total">${total}</td>
+                <td>${week.total_hours}h</td>
+                <td>${target.target_hours}h</td>
+                <td>${status}</td>
             </tr>
         `;
     }
     weekGridHtml += '</tbody></table>';
     document.getElementById('week-grid').innerHTML = weekGridHtml;
 
-    // Problem details
+    // Enhanced problem details with closest techs
     let problemDetailsHtml = '';
 
     if (data.problem_jobs.remote_locations.length > 0) {
-        problemDetailsHtml += '<div class="problem-section"><h3>🚗 Remote Locations (>100 miles)</h3><ul>';
+        problemDetailsHtml += '<div class="problem-section"><h3>🚗 Remote Locations</h3>';
         data.problem_jobs.remote_locations.forEach(job => {
             problemDetailsHtml += `
-                <li>
-                    <strong>WO ${job.work_order}:</strong> ${job.site_name}
-                    <span class="distance">(${job.distance} miles)</span>
-                </li>`;
+                <div class="problem-card">
+                    <strong>WO ${job.work_order}:</strong> ${job.site_name}<br>
+                    <small>${job.location} • ${job.est_hours}h</small><br>
+                    <div class="closest-techs">
+                        <strong>Closest Techs:</strong><br>
+                        ${job.closest_techs.map(t => 
+                            `• ${t.tech_name} (${t.home_location}): ${t.distance} mi`
+                        ).join('<br>')}
+                    </div>
+                </div>`;
         });
-        problemDetailsHtml += '</ul></div>';
+        problemDetailsHtml += '</div>';
     }
 
     if (data.problem_jobs.limited_eligibility.length > 0) {
-        problemDetailsHtml += '<div class="problem-section"><h3>⚠️ Limited Technician Eligibility</h3><ul>';
+        problemDetailsHtml += '<div class="problem-section"><h3>⚠️ Limited Technician Eligibility</h3>';
         data.problem_jobs.limited_eligibility.forEach(job => {
             problemDetailsHtml += `
-                <li>
-                    <strong>WO ${job.work_order}:</strong> ${job.site_name}
-                    <span class="tech-count">(${job.eligible_techs} techs)</span>
-                </li>`;
+                <div class="problem-card">
+                    <strong>WO ${job.work_order}:</strong> ${job.site_name}<br>
+                    <small>${job.est_hours}h • Eligible: ${job.tech_names.join(', ')}</small>
+                </div>`;
         });
-        problemDetailsHtml += '</ul></div>';
-    }
-
-    if (data.problem_jobs.night_jobs.length > 0) {
-        problemDetailsHtml += '<div class="problem-section"><h3>🌙 Night Jobs</h3><ul>';
-        data.problem_jobs.night_jobs.forEach(job => {
-            problemDetailsHtml += `<li><strong>WO ${job.work_order}:</strong> ${job.site_name}</li>`;
-        });
-        problemDetailsHtml += '</ul></div>';
-    }
-
-    if (data.problem_jobs.friday_restricted.length > 0) {
-        problemDetailsHtml += '<div class="problem-section"><h3>📅 Friday Restricted Sites</h3><ul>';
-        data.problem_jobs.friday_restricted.forEach(job => {
-            problemDetailsHtml += `<li><strong>WO ${job.work_order}:</strong> ${job.site_name}</li>`;
-        });
-        problemDetailsHtml += '</ul></div>';
+        problemDetailsHtml += '</div>';
     }
 
     document.getElementById('problem-list').innerHTML = problemDetailsHtml || '<p>No problem jobs identified!</p>';

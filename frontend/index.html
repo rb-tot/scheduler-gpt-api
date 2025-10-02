@@ -144,8 +144,52 @@
 </head>
 <body>
     <div class="header">
-        <h1>📍 Job Assignment Dashboard</h1>
+        <h1>📍 Job Scheduler</h1>
+        <nav class="nav-buttons">
+            <a href="/" class="nav-btn">Dashboard</a>
+            <a href="/static/analysis.html" class="nav-btn">Analysis</a>
+            <a href="/static/schedule-editor.html" class="nav-btn">Schedule Editor</a>
+            <button onclick="showTimeOffModal()" class="nav-btn">Manage Time Off</button>
+        </nav>
     </div>
+
+    <style>
+    .nav-buttons {
+        display: flex;
+        gap: 10px;
+        margin-left: auto;
+    }
+
+    .nav-btn {
+        background: rgba(255,255,255,0.2);
+        color: white;
+        padding: 8px 16px;
+        border-radius: 4px;
+        text-decoration: none;
+        border: 1px solid rgba(255,255,255,0.3);
+        cursor: pointer;
+    }
+
+    .nav-btn:hover {
+        background: rgba(255,255,255,0.3);
+    }
+
+    .problem-card {
+        background: #f8f9fa;
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 4px;
+        border-left: 3px solid #ffc107;
+    }
+
+    .closest-techs {
+        margin-top: 8px;
+        padding: 8px;
+        background: white;
+        border-radius: 4px;
+        font-size: 12px;
+    }
+    </style>
     
     <div class="container">
         <!-- Left: Unassigned Jobs -->
