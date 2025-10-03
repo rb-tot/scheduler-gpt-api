@@ -37,10 +37,16 @@ except:
 
 @app.get("/")
 def serve_app():
-    try:
-        return FileResponse("frontend/scheduler.html")
-    except:
-        return {"message": "Scheduler API Running", "docs": f"{BASE_URL}/docs"}
+    return {
+        "message": "Scheduler API Running", 
+        "status": "healthy",
+        "docs": f"{BASE_URL}/docs",
+        "endpoints": {
+            "technicians": f"{BASE_URL}/api/technicians/all",
+            "jobs": f"{BASE_URL}/api/jobs/unscheduled",
+            "schedule": f"{BASE_URL}/api/schedule/week"
+        }
+    }
 
 # ============================================================================
 # AUTH
