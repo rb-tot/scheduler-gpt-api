@@ -9,6 +9,7 @@
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: #f5f7fa;
+            overflow: hidden;
         }
         
         .header {
@@ -18,6 +19,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            height: 60px;
         }
 
         .main-container {
@@ -26,7 +28,7 @@
             height: calc(100vh - 60px);
         }
 
-        /* Map Section */
+        /* Map Section with AI overlay */
         .map-section {
             position: relative;
             border-bottom: 2px solid #dee2e6;
@@ -37,17 +39,79 @@
             width: 100%;
         }
 
-        /* Bottom Panels */
+        /* AI Suggestions Overlay - Top of map */
+        .ai-suggestions-panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 30%;
+            max-width: 400px;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 1000;
+            transition: all 0.3s ease;
+        }
+
+        .ai-suggestions-panel.collapsed {
+            height: 40px;
+            overflow: hidden;
+        }
+
+        .ai-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 10px 15px;
+            border-radius: 8px 8px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+        }
+
+        .ai-toggle {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+        }
+
+        .ai-content {
+            padding: 15px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .ai-buttons {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+        }
+
+        .ai-buttons button {
+            padding: 6px 12px;
+            font-size: 12px;
+            border-radius: 4px;
+            flex: 1;
+            min-width: 100px;
+        }
+
+        /* Bottom Panels - Adjusted widths */
         .bottom-section {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 35% 65%;
             overflow: hidden;
+            height: 100%;
         }
 
         .panel {
             display: flex;
             flex-direction: column;
             background: white;
+            border-right: 1px solid #dee2e6;
+            height: 100%;
         }
 
         .panel-header {
@@ -55,18 +119,49 @@
             background: #f8f9fa;
             border-bottom: 1px solid #dee2e6;
             font-weight: bold;
+            flex-shrink: 0;
         }
 
         .panel-controls {
             padding: 10px;
             background: white;
             border-bottom: 1px solid #dee2e6;
+            flex-shrink: 0;
         }
 
+        /* Fix scrolling for job list */
         .panel-content {
             flex: 1;
             overflow-y: auto;
             padding: 10px;
+            min-height: 0; /* Important for Firefox */
+        }
+
+        /* Week selector */
+        .week-selector {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .week-nav {
+            display: flex;
+            gap: 5px;
+        }
+
+        .week-nav button {
+            padding: 5px 10px;
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .week-nav button:hover {
+            background: #f8f9fa;
         }
 
         /* Job Cards */
@@ -77,30 +172,25 @@
             padding: 10px;
             margin-bottom: 8px;
             cursor: move;
+            transition: all 0.2s;
         }
 
         .job-card:hover {
             border-color: #3b82f6;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            transform: translateY(-1px);
         }
 
         .job-card.scheduled {
             opacity: 0.5;
-            background: #f0f0f0;
+            background: #f9fafb;
+            cursor: not-allowed;
         }
 
-        /* Tech Cards */
-        .tech-card {
-            background: white;
-            border: 2px solid #e5e7eb;
-            border-radius: 6px;
-            padding: 10px;
-            margin-bottom: 8px;
-        }
-
-        .tech-card.drop-ready {
-            background: #dbeafe;
-            border-color: #3b82f6;
+        .job-card.ineligible {
+            opacity: 0.4;
+            border-color: #dc2626;
+            background: #fef2f2;
         }
 
         /* Schedule Grid */
@@ -108,42 +198,119 @@
             display: grid;
             grid-template-columns: repeat(5, 1fr);
             gap: 10px;
-            margin-top: 10px;
+            margin: 10px;
+            flex: 1;
+            min-height: 0;
         }
 
         .day-column {
-            border: 1px solid #dee2e6;
-            border-radius: 4px;
-            padding: 5px;
-            min-height: 100px;
-            background: #f9fafb;
+            border: 2px solid #dee2e6;
+            border-radius: 6px;
+            background: #ffffff;
+            display: flex;
+            flex-direction: column;
         }
 
         .day-header {
-            font-weight: bold;
-            text-align: center;
-            padding: 5px;
-            background: #e5e7eb;
-            border-radius: 3px;
-            margin-bottom: 5px;
-        }
-
-        .scheduled-job {
             background: #3b82f6;
             color: white;
-            padding: 4px;
-            margin: 2px 0;
-            border-radius: 3px;
+            padding: 8px;
+            text-align: center;
+            font-weight: bold;
+            border-radius: 4px 4px 0 0;
+        }
+
+        .day-date {
             font-size: 11px;
+            font-weight: normal;
+            opacity: 0.9;
+        }
+
+        /* Day drop zone - always droppable */
+        .day-jobs {
+            flex: 1;
+            padding: 8px;
+            min-height: 150px;
+            position: relative;
+            transition: all 0.3s;
+        }
+
+        .day-jobs.drag-over {
+            background: #dbeafe;
+            border: 2px dashed #3b82f6;
+        }
+
+        /* Empty state message */
+        .day-jobs:empty::after {
+            content: 'Drop jobs here';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #9ca3af;
+            font-style: italic;
+            pointer-events: none;
+        }
+
+        /* Hotel toggle */
+        .hotel-toggle {
+            padding: 5px;
+            background: #fef3c7;
+            border-top: 1px solid #fbbf24;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 12px;
+        }
+
+        .hotel-toggle input {
+            cursor: pointer;
+        }
+
+        /* Scheduled jobs */
+        .scheduled-job {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            color: white;
+            padding: 6px;
+            margin: 4px 0;
+            border-radius: 4px;
+            font-size: 12px;
+            position: relative;
+            cursor: move;
+        }
+
+        .scheduled-job:hover .remove-job {
+            opacity: 1;
+        }
+
+        .remove-job {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            background: rgba(239, 68, 68, 0.9);
+            color: white;
+            border: none;
+            border-radius: 3px;
+            width: 18px;
+            height: 18px;
+            font-size: 12px;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .remove-job:hover {
+            background: #dc2626;
         }
 
         /* Stats */
         .stats-row {
             display: flex;
-            gap: 20px;
+            gap: 15px;
             padding: 10px;
             background: #f9fafb;
             border-bottom: 1px solid #dee2e6;
+            flex-shrink: 0;
         }
 
         .stat {
@@ -151,14 +318,31 @@
         }
 
         .stat-value {
-            font-size: 24px;
+            font-size: 20px;
             font-weight: bold;
             color: #2563eb;
         }
 
         .stat-label {
-            font-size: 12px;
+            font-size: 11px;
             color: #6b7280;
+            text-transform: uppercase;
+        }
+
+        /* Daily hours display */
+        .day-hours {
+            padding: 5px;
+            background: #f0f9ff;
+            border-top: 1px solid #0284c7;
+            font-size: 11px;
+            text-align: center;
+            color: #075985;
+        }
+
+        .day-hours.over-capacity {
+            background: #fef2f2;
+            border-color: #dc2626;
+            color: #991b1b;
         }
 
         /* Controls */
@@ -179,29 +363,14 @@
             padding: 8px;
             border: 1px solid #d1d5db;
             border-radius: 4px;
-            margin-right: 8px;
         }
 
-        .capacity-bar {
-            height: 6px;
-            background: #e5e7eb;
-            border-radius: 3px;
-            margin-top: 5px;
-            overflow: hidden;
-        }
-
-        .capacity-fill {
-            height: 100%;
-            background: #10b981;
-            transition: width 0.3s;
-        }
-
-        .capacity-fill.warning {
-            background: #f59e0b;
-        }
-
-        .capacity-fill.danger {
-            background: #ef4444;
+        .job-count-info {
+            font-size: 12px;
+            color: #6b7280;
+            padding: 5px 10px;
+            background: #f9fafb;
+            border-bottom: 1px solid #e5e7eb;
         }
     </style>
 </head>
@@ -214,14 +383,34 @@
     </div>
     
     <div class="main-container">
-        <!-- Map -->
+        <!-- Map Section with AI Overlay -->
         <div class="map-section">
             <div id="map"></div>
+            
+            <!-- AI Suggestions Panel - Floating on map -->
+            <div class="ai-suggestions-panel" id="ai-panel">
+                <div class="ai-header" onclick="toggleAIPanel()">
+                    <span>🤖 AI Suggestions</span>
+                    <button class="ai-toggle" id="ai-toggle">▼</button>
+                </div>
+                <div class="ai-content">
+                    <div class="ai-buttons">
+                        <button onclick="suggestNearbyJobs()" style="background: #0ea5e9;">Find Nearby</button>
+                        <button onclick="suggestBestFit()" style="background: #10b981;">Best Fit</button>
+                        <button onclick="optimizeWeek()" style="background: #8b5cf6;">Optimize</button>
+                    </div>
+                    <div id="suggestions">
+                        <p style="color: #64748b; font-style: italic; text-align: center;">
+                            Select a technician to see suggestions
+                        </p>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <!-- Bottom Section -->
+        <!-- Bottom Section - Jobs and Schedule -->
         <div class="bottom-section">
-            <!-- Jobs Panel -->
+            <!-- Jobs Panel (35% width) -->
             <div class="panel">
                 <div class="panel-header">
                     Unassigned Jobs (<span id="job-count">0</span>)
@@ -241,60 +430,40 @@
                         <div class="stat-value" id="urgent-count">0</div>
                     </div>
                 </div>
+                <div class="job-count-info">
+                    Showing <span id="showing-count">0</span> of <span id="total-count">0</span> jobs
+                    <span id="filtered-info"></span>
+                </div>
                 <div class="panel-content" id="job-list">
                     <!-- Jobs appear here -->
                 </div>
             </div>
 
-            <!-- Schedule Panel -->
-            <div class="panel">
+            <!-- Schedule Panel (65% width) -->
+            <div class="panel" style="border-right: none;">
                 <div class="panel-header">
-                    Week Schedule
+                    Weekly Schedule
                 </div>
-                <div class="panel-controls">
-                    <label>Tech:</label>
+                
+                <!-- Week Selector -->
+                <div class="week-selector">
+                    <label>Week:</label>
+                    <div class="week-nav">
+                        <button onclick="changeWeek(-1)">◀</button>
+                        <input type="week" id="week-select" onchange="loadWeek()">
+                        <button onclick="changeWeek(1)">▶</button>
+                    </div>
                     <select id="tech-select" onchange="selectTech()">
                         <option value="">Select Technician</option>
                     </select>
-                    <span id="tech-hours">0h / 0h</span>
+                    <span id="tech-hours" style="margin-left: auto; font-weight: bold;">
+                        0h / 0h
+                    </span>
                 </div>
+                
+                <!-- Schedule Grid -->
                 <div class="schedule-grid" id="schedule-grid">
-                    <div class="day-column" data-day="monday">
-                        <div class="day-header">Monday</div>
-                        <div class="day-jobs" id="monday-jobs" ondrop="dropJob(event, 'monday')" ondragover="allowDrop(event)" ondragleave="clearDrop(event)"></div>
-                    </div>
-                    <div class="day-column" data-day="tuesday">
-                        <div class="day-header">Tuesday</div>
-                        <div class="day-jobs" id="tuesday-jobs" ondrop="dropJob(event, 'tuesday')" ondragover="allowDrop(event)" ondragleave="clearDrop(event)"></div>
-                    </div>
-                    <div class="day-column" data-day="wednesday">
-                        <div class="day-header">Wednesday</div>
-                        <div class="day-jobs" id="wednesday-jobs" ondrop="dropJob(event, 'wednesday')" ondragover="allowDrop(event)" ondragleave="clearDrop(event)"></div>
-                    </div>
-                    <div class="day-column" data-day="thursday">
-                        <div class="day-header">Thursday</div>
-                        <div class="day-jobs" id="thursday-jobs" ondrop="dropJob(event, 'thursday')" ondragover="allowDrop(event)" ondragleave="clearDrop(event)"></div>
-                    </div>
-                    <div class="day-column" data-day="friday">
-                        <div class="day-header">Friday</div>
-                        <div class="day-jobs" id="friday-jobs" ondrop="dropJob(event, 'friday')" ondragover="allowDrop(event)" ondragleave="clearDrop(event)"></div>
-                    </div>
-                </div>
-                <!-- Add this AI Suggestions Panel -->
-                <div style="padding: 15px; background: #f0f9ff; border-top: 2px solid #0284c7; margin-top: 20px;">
-                    <h3 style="margin: 0 0 10px 0; color: #0c4a6e;">🤖 AI Suggestions</h3>
-                    <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-                        <button onclick="suggestNearbyJobs()" style="background: #0ea5e9;">Find Nearby Jobs</button>
-                        <button onclick="suggestBestFit()" style="background: #10b981;">Best Fit Jobs</button>
-                        <button onclick="optimizeWeek()" style="background: #8b5cf6;">Optimize Week</button>
-                    </div>
-                    <div id="suggestions" style="max-height: 200px; overflow-y: auto;">
-                        <p style="color: #64748b; font-style: italic;">Select a technician and click a suggestion type</p>
-                    </div>
-                </div>
-
-                <div class="panel-content" id="tech-list">
-                    <!-- Tech info appears here -->
+                    <!-- Days will be generated by JavaScript -->
                 </div>
             </div>
         </div>
@@ -308,12 +477,136 @@
         let jobs = [];
         let techs = [];
         let selectedTech = null;
-        let schedules = {}; // techId -> {monday: [], tuesday: [], ...}
+        let schedules = {};
+        let weekDates = {};
+        let scheduledJobIds = new Set(); // Track scheduled jobs to prevent duplicates
+        let techEligibility = {}; // Store tech eligibility data
         
         // Initialize map
         function initMap() {
             map = L.map('map').setView([39.0, -105.5], 7);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        }
+        
+        // Toggle AI Panel
+        function toggleAIPanel() {
+            const panel = document.getElementById('ai-panel');
+            const toggle = document.getElementById('ai-toggle');
+            
+            if (panel.classList.contains('collapsed')) {
+                panel.classList.remove('collapsed');
+                toggle.textContent = '▼';
+            } else {
+                panel.classList.add('collapsed');
+                toggle.textContent = '▶';
+            }
+        }
+        
+        // Initialize week selector and dates
+        function initializeWeek() {
+            const now = new Date();
+            const monday = new Date(now);
+            monday.setDate(now.getDate() - now.getDay() + 1);
+            
+            // Set week selector
+            const year = monday.getFullYear();
+            const week = getWeekNumber(monday);
+            document.getElementById('week-select').value = `${year}-W${week.toString().padStart(2, '0')}`;
+            
+            updateWeekDates();
+            createScheduleGrid();
+        }
+        
+        // Get week number
+        function getWeekNumber(d) {
+            const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+            date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay() || 7));
+            const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+            const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+            return weekNo;
+        }
+        
+        // Update week dates
+        function updateWeekDates() {
+            const weekInput = document.getElementById('week-select').value;
+            if (!weekInput) return;
+            
+            const [year, week] = weekInput.split('-W');
+            const firstDayOfYear = new Date(year, 0, 1);
+            const days = 2 + (week - 1) * 7 - firstDayOfYear.getDay() + 1;
+            const monday = new Date(year, 0, days);
+            
+            weekDates = {
+                monday: new Date(monday),
+                tuesday: new Date(monday.getTime() + 86400000),
+                wednesday: new Date(monday.getTime() + 86400000 * 2),
+                thursday: new Date(monday.getTime() + 86400000 * 3),
+                friday: new Date(monday.getTime() + 86400000 * 4)
+            };
+        }
+        
+        // Create schedule grid with dates
+        function createScheduleGrid() {
+            const grid = document.getElementById('schedule-grid');
+            grid.innerHTML = '';
+            
+            const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
+            
+            days.forEach(day => {
+                const date = weekDates[day];
+                const dateStr = date ? `${date.getMonth() + 1}/${date.getDate()}` : '';
+                
+                const dayCol = document.createElement('div');
+                dayCol.className = 'day-column';
+                dayCol.innerHTML = `
+                    <div class="day-header">
+                        ${day.charAt(0).toUpperCase() + day.slice(1)}
+                        <div class="day-date">${dateStr}</div>
+                    </div>
+                    <div class="day-jobs" 
+                         id="${day}-jobs" 
+                         data-day="${day}"
+                         ondrop="dropJob(event, '${day}')" 
+                         ondragover="allowDrop(event)" 
+                         ondragleave="clearDrop(event)">
+                    </div>
+                    <div class="day-hours" id="${day}-hours">
+                        0h / 0h
+                    </div>
+                    <div class="hotel-toggle">
+                        <input type="checkbox" id="${day}-hotel" onchange="updateDayHours('${day}')">
+                        <label for="${day}-hotel">🏨 Staying out</label>
+                    </div>
+                `;
+                grid.appendChild(dayCol);
+            });
+        }
+        
+        // Change week
+        function changeWeek(direction) {
+            const weekInput = document.getElementById('week-select');
+            const [year, week] = weekInput.value.split('-W');
+            const newWeek = parseInt(week) + direction;
+            
+            if (newWeek < 1) {
+                weekInput.value = `${parseInt(year) - 1}-W52`;
+            } else if (newWeek > 52) {
+                weekInput.value = `${parseInt(year) + 1}-W01`;
+            } else {
+                weekInput.value = `${year}-W${newWeek.toString().padStart(2, '0')}`;
+            }
+            
+            loadWeek();
+        }
+        
+        // Load week
+        function loadWeek() {
+            updateWeekDates();
+            createScheduleGrid();
+            
+            if (selectedTech) {
+                updateScheduleDisplay();
+            }
         }
         
         // Load jobs
@@ -332,6 +625,9 @@
                     j.jp_status === 'Waiting to Schedule'
                 );
                 
+                // Load eligibility data if available
+                await loadEligibilityData();
+                
                 displayJobs();
                 plotJobsOnMap();
                 updateStats();
@@ -341,44 +637,72 @@
             }
         }
         
-        // Display jobs in list
+        // Load eligibility data
+        async function loadEligibilityData() {
+            // This would load from your job_technician_eligibility table
+            // For now, we'll assume all techs can do all jobs
+            // You can implement the actual API call here
+        }
+        
+        // Display jobs
         function displayJobs() {
             const container = document.getElementById('job-list');
             container.innerHTML = '';
             
+            let displayedCount = 0;
+            let eligibleCount = 0;
+            
             jobs.forEach(job => {
-                if (isJobScheduled(job.work_order)) return;
+                // Skip if already scheduled
+                if (scheduledJobIds.has(job.work_order)) {
+                    return;
+                }
+                
+                const isEligible = !selectedTech || checkTechEligibility(selectedTech.technician_id, job.work_order);
+                if (selectedTech && !isEligible) {
+                    return; // Don't show ineligible jobs when tech selected
+                }
+                
+                displayedCount++;
+                if (isEligible) eligibleCount++;
                 
                 const div = document.createElement('div');
-                div.className = 'job-card';
+                div.className = `job-card ${!isEligible ? 'ineligible' : ''}`;
                 div.id = `job-${job.work_order}`;
-                div.draggable = true;
+                div.draggable = isEligible;
                 div.ondragstart = (e) => dragJob(e, job);
                 
+                const urgentBadge = (job.jp_priority === 'NOV' || job.jp_priority === 'Urgent') 
+                    ? '<span style="color: red; float: right;">⚠️</span>' : '';
+                
                 div.innerHTML = `
+                    ${urgentBadge}
                     <strong>WO ${job.work_order}</strong> - ${job.est_hours || 2}h<br>
-                    ${job.site_name}<br>
+                    <small>${job.site_name}<br>
                     ${job.site_city}, ${job.site_state}<br>
-                    Due: ${new Date(job.due_date).toLocaleDateString()}
+                    Due: ${new Date(job.due_date).toLocaleDateString()}</small>
                 `;
                 
                 container.appendChild(div);
             });
             
-            document.getElementById('job-count').textContent = 
-                jobs.filter(j => !isJobScheduled(j.work_order)).length;
+            // Update counts
+            document.getElementById('job-count').textContent = displayedCount;
+            document.getElementById('showing-count').textContent = displayedCount;
+            document.getElementById('total-count').textContent = jobs.length - scheduledJobIds.size;
+            
+            if (selectedTech) {
+                document.getElementById('filtered-info').textContent = ` (${eligibleCount} eligible for ${selectedTech.name})`;
+            } else {
+                document.getElementById('filtered-info').textContent = '';
+            }
         }
         
-        // Check if job is scheduled
-        function isJobScheduled(workOrder) {
-            for (let techId in schedules) {
-                for (let day in schedules[techId]) {
-                    if (schedules[techId][day].some(j => j.work_order === workOrder)) {
-                        return true;
-                    }
-                }
-            }
-            return false;
+        // Check tech eligibility
+        function checkTechEligibility(techId, workOrder) {
+            // For now, return true for all
+            // Implement actual eligibility check using your data
+            return true;
         }
         
         // Plot jobs on map
@@ -392,7 +716,7 @@
             
             jobs.forEach(job => {
                 if (!job.latitude || !job.longitude) return;
-                if (isJobScheduled(job.work_order)) return;
+                if (scheduledJobIds.has(job.work_order)) return;
                 
                 const color = job.jp_priority === 'Urgent' ? 'red' : 'blue';
                 L.circleMarker([job.latitude, job.longitude], {
@@ -425,14 +749,16 @@
                     option.textContent = `${tech.name} (${tech.home_location})`;
                     select.appendChild(option);
                     
-                    // Initialize schedule
-                    schedules[tech.technician_id] = {
-                        monday: [],
-                        tuesday: [],
-                        wednesday: [],
-                        thursday: [],
-                        friday: []
-                    };
+                    // Initialize schedule for each tech
+                    if (!schedules[tech.technician_id]) {
+                        schedules[tech.technician_id] = {
+                            monday: [],
+                            tuesday: [],
+                            wednesday: [],
+                            thursday: [],
+                            friday: []
+                        };
+                    }
                 });
             } catch (error) {
                 console.error('Error:', error);
@@ -442,9 +768,14 @@
         // Select technician
         function selectTech() {
             const techId = document.getElementById('tech-select').value;
-            if (!techId) return;
+            if (!techId) {
+                selectedTech = null;
+                displayJobs(); // Refresh to show all jobs
+                return;
+            }
             
             selectedTech = techs.find(t => t.technician_id == techId);
+            displayJobs(); // Refresh to filter eligible jobs
             updateScheduleDisplay();
         }
         
@@ -453,30 +784,18 @@
             event.dataTransfer.setData('job', JSON.stringify(job));
         }
         
-        // Fixed drag and drop functions
         function allowDrop(event) {
             event.preventDefault();
-            event.stopPropagation();
-            // Highlight the drop zone
-            const dropZone = event.currentTarget;
-            dropZone.style.background = '#dbeafe';
-            dropZone.style.border = '2px dashed #3b82f6';
+            event.currentTarget.classList.add('drag-over');
         }
-
+        
         function clearDrop(event) {
-            const dropZone = event.currentTarget;
-            dropZone.style.background = '';
-            dropZone.style.border = '';
+            event.currentTarget.classList.remove('drag-over');
         }
-
+        
         function dropJob(event, day) {
             event.preventDefault();
-            event.stopPropagation();
-            
-            // Clear the highlight
-            const dropZone = event.currentTarget;
-            dropZone.style.background = '';
-            dropZone.style.border = '';
+            event.currentTarget.classList.remove('drag-over');
             
             if (!selectedTech) {
                 alert('Please select a technician first');
@@ -485,29 +804,111 @@
             
             const job = JSON.parse(event.dataTransfer.getData('job'));
             
-            // Check capacity
-            const dayHours = schedules[selectedTech.technician_id][day]
-                .reduce((sum, j) => sum + (j.est_hours || 2), 0);
+            // Check if job already scheduled
+            if (scheduledJobIds.has(job.work_order)) {
+                alert('This job is already scheduled');
+                return;
+            }
             
-            if (dayHours + (job.est_hours || 2) > selectedTech.max_daily_hours) {
+            // Check capacity
+            const dayJobs = schedules[selectedTech.technician_id][day];
+            const dayHours = calculateDayHours(selectedTech, day);
+            
+            if (dayHours.total + (job.est_hours || 2) > selectedTech.max_daily_hours) {
                 alert(`This exceeds ${selectedTech.name}'s daily capacity of ${selectedTech.max_daily_hours} hours`);
                 return;
             }
             
             // Add to schedule
             schedules[selectedTech.technician_id][day].push(job);
+            scheduledJobIds.add(job.work_order);
             
             // Update displays
             updateScheduleDisplay();
             displayJobs();
             plotJobsOnMap();
             updateStats();
-
+        }
+        
+        // Calculate day hours including travel
+        function calculateDayHours(tech, day) {
+            const dayJobs = schedules[tech.technician_id][day];
+            let jobHours = 0;
+            let travelHours = 0;
             
-            // Mark job card as scheduled
-            const jobCard = document.getElementById(`job-${job.work_order}`);
-            if (jobCard) {
-                jobCard.classList.add('scheduled');
+            if (dayJobs.length === 0) {
+                return { jobs: 0, travel: 0, total: 0 };
+            }
+            
+            // Calculate job hours
+            dayJobs.forEach(job => {
+                jobHours += job.est_hours || 2;
+            });
+            
+            // Calculate travel time
+            // From home to first job (unless staying out from previous day)
+            const prevDay = getPreviousDay(day);
+            const stayingFromPrevious = prevDay && document.getElementById(`${prevDay}-hotel`)?.checked;
+            
+            if (!stayingFromPrevious && dayJobs[0] && tech.home_latitude && dayJobs[0].latitude) {
+                const homeToFirst = calculateDistance(
+                    tech.home_latitude, tech.home_longitude,
+                    dayJobs[0].latitude, dayJobs[0].longitude
+                );
+                travelHours += homeToFirst / 50; // Assume 50mph average
+            }
+            
+            // Between jobs
+            for (let i = 1; i < dayJobs.length; i++) {
+                if (dayJobs[i-1].latitude && dayJobs[i].latitude) {
+                    const betweenJobs = calculateDistance(
+                        dayJobs[i-1].latitude, dayJobs[i-1].longitude,
+                        dayJobs[i].latitude, dayJobs[i].longitude
+                    );
+                    travelHours += betweenJobs / 50;
+                }
+            }
+            
+            // Back home (unless staying out)
+            const stayingOut = document.getElementById(`${day}-hotel`)?.checked;
+            if (!stayingOut && dayJobs[dayJobs.length - 1] && tech.home_latitude) {
+                const lastJob = dayJobs[dayJobs.length - 1];
+                if (lastJob.latitude) {
+                    const lastToHome = calculateDistance(
+                        lastJob.latitude, lastJob.longitude,
+                        tech.home_latitude, tech.home_longitude
+                    );
+                    travelHours += lastToHome / 50;
+                }
+            }
+            
+            return {
+                jobs: jobHours,
+                travel: Math.round(travelHours * 10) / 10,
+                total: Math.round((jobHours + travelHours) * 10) / 10
+            };
+        }
+        
+        // Get previous day
+        function getPreviousDay(day) {
+            const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
+            const index = days.indexOf(day);
+            return index > 0 ? days[index - 1] : null;
+        }
+        
+        // Update day hours display
+        function updateDayHours(day) {
+            if (!selectedTech) return;
+            
+            const hours = calculateDayHours(selectedTech, day);
+            const hoursDiv = document.getElementById(`${day}-hours`);
+            
+            hoursDiv.textContent = `${hours.total}h (${hours.jobs}h work + ${hours.travel}h travel)`;
+            
+            if (hours.total > selectedTech.max_daily_hours) {
+                hoursDiv.className = 'day-hours over-capacity';
+            } else {
+                hoursDiv.className = 'day-hours';
             }
         }
         
@@ -516,33 +917,72 @@
             if (!selectedTech) return;
             
             const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
-            let totalHours = 0;
+            let totalWeekHours = 0;
             
             days.forEach(day => {
-                const dayDiv = document.querySelector(`[data-day="${day}"] .day-jobs`);
+                const dayDiv = document.getElementById(`${day}-jobs`);
                 dayDiv.innerHTML = '';
                 
                 const dayJobs = schedules[selectedTech.technician_id][day];
-                dayJobs.forEach(job => {
+                
+                dayJobs.forEach((job, index) => {
                     const jobDiv = document.createElement('div');
                     jobDiv.className = 'scheduled-job';
-                    jobDiv.innerHTML = `WO ${job.work_order} (${job.est_hours || 2}h)`;
+                    jobDiv.innerHTML = `
+                        WO ${job.work_order} - ${job.est_hours || 2}h
+                        <button class="remove-job" onclick="removeJob('${day}', ${index}, ${job.work_order})" title="Remove">×</button>
+                    `;
                     dayDiv.appendChild(jobDiv);
-                    totalHours += job.est_hours || 2;
                 });
+                
+                // Update day hours
+                updateDayHours(day);
+                const dayHours = calculateDayHours(selectedTech, day);
+                totalWeekHours += dayHours.total;
             });
             
-            // Update hours display
+            // Update week total
             document.getElementById('tech-hours').textContent = 
-                `${totalHours}h / ${selectedTech.max_weekly_hours}h`;
+                `${totalWeekHours.toFixed(1)}h / ${selectedTech.max_weekly_hours}h`;
+        }
+        
+        // Remove job from schedule
+        function removeJob(day, index, workOrder) {
+            if (!selectedTech) return;
+            
+            // Remove from schedule
+            schedules[selectedTech.technician_id][day].splice(index, 1);
+            
+            // Remove from scheduled set
+            scheduledJobIds.delete(workOrder);
+            
+            // Update displays
+            updateScheduleDisplay();
+            displayJobs();
+            plotJobsOnMap();
+            updateStats();
+        }
+        
+        // Calculate distance
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 3958.8; // Earth radius in miles
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                      Math.sin(dLon/2) * Math.sin(dLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
         }
         
         // Update stats
         function updateStats() {
-            const unscheduledJobs = jobs.filter(j => !isJobScheduled(j.work_order));
+            const unscheduledJobs = jobs.filter(j => !scheduledJobIds.has(j.work_order));
             
             const totalHours = unscheduledJobs.reduce((sum, j) => sum + (j.est_hours || 2), 0);
-            const urgentCount = unscheduledJobs.filter(j => j.jp_priority === 'Urgent').length;
+            const urgentCount = unscheduledJobs.filter(j => 
+                j.jp_priority === 'NOV' || j.jp_priority === 'Urgent'
+            ).length;
             
             document.getElementById('total-hours').textContent = totalHours.toFixed(1);
             document.getElementById('urgent-count').textContent = urgentCount;
@@ -551,16 +991,15 @@
         // Save schedule
         async function saveSchedule() {
             console.log('Saving schedule:', schedules);
-            alert('Schedule saved (check console)');
-            // Here you would call your API to save the schedule
+            console.log('Scheduled job IDs:', Array.from(scheduledJobIds));
+            
+            // Here you would save to database
+            // Could create a 'scheduled_jobs_temp' table or similar
+            
+            alert('Schedule ready to save - check console for data');
         }
-        
-        // Initialize
-        window.onload = function() {
-            initMap();
-            loadTechs();
-        }
-                // AI Suggestion Functions
+        // AI Suggestion Functions (add these before window.onload)
+
         function suggestNearbyJobs() {
             if (!selectedTech) {
                 alert('Please select a technician first');
@@ -570,10 +1009,12 @@
             const suggestionsDiv = document.getElementById('suggestions');
             suggestionsDiv.innerHTML = '<p>🔍 Finding nearby jobs...</p>';
             
-            // Get tech's scheduled jobs
+            // Get all scheduled jobs for this tech
             const scheduledJobs = [];
             for (let day in schedules[selectedTech.technician_id]) {
-                scheduledJobs.push(...schedules[selectedTech.technician_id][day]);
+                schedules[selectedTech.technician_id][day].forEach(job => {
+                    scheduledJobs.push({ ...job, day: day });
+                });
             }
             
             if (scheduledJobs.length === 0) {
@@ -582,7 +1023,7 @@
             }
             
             // Find unscheduled jobs near scheduled ones
-            const unscheduledJobs = jobs.filter(j => !isJobScheduled(j.work_order));
+            const unscheduledJobs = jobs.filter(j => !scheduledJobIds.has(j.work_order));
             const suggestions = [];
             
             scheduledJobs.forEach(schedJob => {
@@ -600,15 +1041,26 @@
                         suggestions.push({
                             job: job,
                             nearJob: schedJob,
-                            distance: distance
+                            distance: distance,
+                            suggestedDay: schedJob.day // Same day as nearby job
                         });
                     }
                 });
             });
             
-            // Sort by distance and show top 5
+            // Remove duplicates and sort by distance
+            const uniqueSuggestions = [];
+            const seen = new Set();
             suggestions.sort((a, b) => a.distance - b.distance);
-            const top5 = suggestions.slice(0, 5);
+            
+            suggestions.forEach(s => {
+                if (!seen.has(s.job.work_order)) {
+                    seen.add(s.job.work_order);
+                    uniqueSuggestions.push(s);
+                }
+            });
+            
+            const top5 = uniqueSuggestions.slice(0, 5);
             
             if (top5.length === 0) {
                 suggestionsDiv.innerHTML = '<p>No nearby jobs found within 20 miles of scheduled jobs</p>';
@@ -617,19 +1069,64 @@
             
             let html = '<div style="color: #0c4a6e;"><strong>📍 Nearby Jobs (within 20 miles):</strong></div>';
             top5.forEach(s => {
+                const dayCapitalized = s.suggestedDay.charAt(0).toUpperCase() + s.suggestedDay.slice(1);
                 html += `
                     <div style="padding: 8px; margin: 5px 0; background: white; border-radius: 4px; border-left: 3px solid #0ea5e9;">
                         <strong>WO ${s.job.work_order}</strong> - ${s.job.site_name}<br>
-                        <small>📏 ${s.distance.toFixed(1)} miles from WO ${s.nearJob.work_order}</small><br>
-                        <small>⏱️ ${s.job.est_hours || 2} hours</small>
-                        <button onclick='quickAddJob(${JSON.stringify(s.job)})' style='margin-top: 5px; padding: 4px 8px; font-size: 12px;'>
-                            + Add to Schedule
+                        <small>📏 ${s.distance.toFixed(1)} miles from WO ${s.nearJob.work_order} on ${dayCapitalized}</small><br>
+                        <small>⏱️ ${s.job.est_hours || 2} hours</small><br>
+                        <select id="day-select-${s.job.work_order}" style="margin-top: 5px; padding: 4px;">
+                            <option value="${s.suggestedDay}" selected>${dayCapitalized} (recommended)</option>
+                            <option value="monday">Monday</option>
+                            <option value="tuesday">Tuesday</option>
+                            <option value="wednesday">Wednesday</option>
+                            <option value="thursday">Thursday</option>
+                            <option value="friday">Friday</option>
+                        </select>
+                        <button onclick='addJobToSelectedDay(${JSON.stringify(s.job)}, "${s.job.work_order}")' style='margin-left: 5px; padding: 4px 8px; font-size: 12px;'>
+                            + Add
                         </button>
                     </div>
                 `;
             });
             
             suggestionsDiv.innerHTML = html;
+        }
+
+        function addJobToSelectedDay(job, workOrderId) {
+            const daySelect = document.getElementById(`day-select-${workOrderId}`);
+            const selectedDay = daySelect.value;
+            
+            if (!selectedTech) {
+                alert('Please select a technician first');
+                return;
+            }
+            
+            // Check if already scheduled
+            if (scheduledJobIds.has(job.work_order)) {
+                alert('This job is already scheduled');
+                return;
+            }
+            
+            // Check capacity
+            const dayHours = calculateDayHours(selectedTech, selectedDay);
+            if (dayHours.total + (job.est_hours || 2) > selectedTech.max_daily_hours) {
+                alert(`This exceeds ${selectedTech.name}'s daily capacity for ${selectedDay}`);
+                return;
+            }
+            
+            // Add to schedule
+            schedules[selectedTech.technician_id][selectedDay].push(job);
+            scheduledJobIds.add(job.work_order);
+            
+            // Update displays
+            updateScheduleDisplay();
+            displayJobs();
+            plotJobsOnMap();
+            updateStats();
+            
+            // Refresh suggestions
+            suggestNearbyJobs();
         }
 
         function suggestBestFit() {
@@ -646,34 +1143,32 @@
             const capacity = {};
             
             days.forEach(day => {
-                const used = schedules[selectedTech.technician_id][day]
-                    .reduce((sum, j) => sum + (j.est_hours || 2), 0);
-                capacity[day] = selectedTech.max_daily_hours - used;
+                const hours = calculateDayHours(selectedTech, day);
+                capacity[day] = Math.max(0, selectedTech.max_daily_hours - hours.total);
             });
             
-            // Find jobs that fit in available slots
-            const unscheduledJobs = jobs.filter(j => !isJobScheduled(j.work_order));
+            // Find jobs that fit
+            const unscheduledJobs = jobs.filter(j => !scheduledJobIds.has(j.work_order));
             const fits = [];
             
             unscheduledJobs.forEach(job => {
                 const jobHours = job.est_hours || 2;
                 
                 days.forEach(day => {
-                    if (capacity[day] >= jobHours) {
-                        // Check if near tech's home
+                    if (capacity[day] >= jobHours + 1) { // +1 for travel time estimate
                         if (selectedTech.home_latitude && job.latitude) {
                             const distanceFromHome = calculateDistance(
                                 selectedTech.home_latitude, selectedTech.home_longitude,
                                 job.latitude, job.longitude
                             );
                             
-                            if (distanceFromHome < 50) { // Within 50 miles of home
+                            if (distanceFromHome < 50) {
                                 fits.push({
                                     job: job,
                                     day: day,
                                     remainingCapacity: capacity[day],
                                     distanceFromHome: distanceFromHome,
-                                    score: (50 - distanceFromHome) + (jobHours * 10) // Prioritize closer and longer jobs
+                                    score: (50 - distanceFromHome) + (jobHours * 10)
                                 });
                             }
                         }
@@ -681,12 +1176,22 @@
                 });
             });
             
-            // Sort by score and show top 5
+            // Sort by score and get unique jobs
             fits.sort((a, b) => b.score - a.score);
-            const top5 = fits.slice(0, 5);
+            const uniqueFits = [];
+            const seen = new Set();
+            
+            fits.forEach(f => {
+                if (!seen.has(f.job.work_order)) {
+                    seen.add(f.job.work_order);
+                    uniqueFits.push(f);
+                }
+            });
+            
+            const top5 = uniqueFits.slice(0, 5);
             
             if (top5.length === 0) {
-                suggestionsDiv.innerHTML = '<p>No jobs found that fit remaining capacity within 50 miles</p>';
+                suggestionsDiv.innerHTML = '<p>No jobs found that fit remaining capacity</p>';
                 return;
             }
             
@@ -695,9 +1200,9 @@
                 html += `
                     <div style="padding: 8px; margin: 5px 0; background: white; border-radius: 4px; border-left: 3px solid #10b981;">
                         <strong>WO ${f.job.work_order}</strong> - ${f.job.site_name}<br>
-                        <small>📅 Fits on ${f.day.charAt(0).toUpperCase() + f.day.slice(1)}</small><br>
+                        <small>📅 Best fit: ${f.day.charAt(0).toUpperCase() + f.day.slice(1)}</small><br>
                         <small>🏠 ${f.distanceFromHome.toFixed(1)} miles from home</small><br>
-                        <small>⏱️ ${f.job.est_hours || 2}h (${f.remainingCapacity}h available)</small>
+                        <small>⏱️ ${f.job.est_hours || 2}h (${f.remainingCapacity.toFixed(1)}h available)</small>
                         <button onclick='quickAddJobToDay(${JSON.stringify(f.job)}, "${f.day}")' style='margin-top: 5px; padding: 4px 8px; font-size: 12px;'>
                             + Add to ${f.day}
                         </button>
@@ -708,6 +1213,27 @@
             suggestionsDiv.innerHTML = html;
         }
 
+        function quickAddJobToDay(job, day) {
+            if (!selectedTech) return;
+            
+            // Check if already scheduled
+            if (scheduledJobIds.has(job.work_order)) {
+                alert('This job is already scheduled');
+                return;
+            }
+            
+            schedules[selectedTech.technician_id][day].push(job);
+            scheduledJobIds.add(job.work_order);
+            
+            updateScheduleDisplay();
+            displayJobs();
+            plotJobsOnMap();
+            updateStats();
+            
+            // Refresh suggestions
+            suggestBestFit();
+        }
+
         function optimizeWeek() {
             if (!selectedTech) {
                 alert('Please select a technician first');
@@ -716,45 +1242,41 @@
             
             const suggestionsDiv = document.getElementById('suggestions');
             
-            // Calculate current efficiency
             const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
             let totalTravel = 0;
             let totalHours = 0;
+            let totalJobs = 0;
             let emptyDays = 0;
             
             days.forEach(day => {
                 const dayJobs = schedules[selectedTech.technician_id][day];
+                const dayHours = calculateDayHours(selectedTech, day);
+                
                 if (dayJobs.length === 0) {
                     emptyDays++;
                 } else {
-                    dayJobs.forEach(j => totalHours += (j.est_hours || 2));
-                    
-                    // Calculate travel between jobs
-                    for (let i = 1; i < dayJobs.length; i++) {
-                        if (dayJobs[i-1].latitude && dayJobs[i].latitude) {
-                            totalTravel += calculateDistance(
-                                dayJobs[i-1].latitude, dayJobs[i-1].longitude,
-                                dayJobs[i].latitude, dayJobs[i].longitude
-                            );
-                        }
-                    }
+                    totalJobs += dayJobs.length;
+                    totalHours += dayHours.total;
+                    totalTravel += dayHours.travel;
                 }
             });
             
             const efficiency = totalHours > 0 ? 
-                ((totalHours / (totalHours + totalTravel/25)) * 100).toFixed(1) : 0;
+                ((totalHours - totalTravel) / totalHours * 100).toFixed(1) : 0;
             
             let html = `
                 <div style="padding: 10px; background: white; border-radius: 6px;">
                     <h4 style="color: #7c3aed; margin: 0 0 10px 0;">📊 Week Analysis</h4>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 13px;">
                         <div>
+                            <strong>Jobs Scheduled:</strong> ${totalJobs}<br>
                             <strong>Total Hours:</strong> ${totalHours.toFixed(1)}h<br>
-                            <strong>Travel Distance:</strong> ${totalTravel.toFixed(0)} miles<br>
+                            <strong>Travel Time:</strong> ${totalTravel.toFixed(1)}h
                         </div>
                         <div>
-                            <strong>Efficiency:</strong> ${efficiency}%<br>
+                            <strong>Work Efficiency:</strong> ${efficiency}%<br>
                             <strong>Empty Days:</strong> ${emptyDays}<br>
+                            <strong>Avg per Day:</strong> ${(totalJobs / (5 - emptyDays)).toFixed(1)} jobs
                         </div>
                     </div>
                     <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #e5e7eb;">
@@ -762,16 +1284,17 @@
             `;
             
             if (emptyDays > 2) {
-                html += `• Consider consolidating jobs to fewer days<br>`;
+                html += `• Consider consolidating to fewer days for efficiency<br>`;
             }
-            if (totalTravel > 200) {
-                html += `• High travel distance - group jobs by area<br>`;
-            }
-            if (efficiency < 70) {
-                html += `• Low efficiency - use "Find Nearby Jobs" to reduce travel<br>`;
+            if (totalTravel > totalHours * 0.3) {
+                html += `• High travel time - use "Find Nearby" to reduce<br>`;
             }
             if (totalHours < selectedTech.max_weekly_hours * 0.7) {
-                html += `• ${(selectedTech.max_weekly_hours - totalHours).toFixed(1)}h capacity remaining<br>`;
+                const remaining = selectedTech.max_weekly_hours - totalHours;
+                html += `• ${remaining.toFixed(1)}h capacity available - add more jobs<br>`;
+            }
+            if (totalJobs > 0 && totalJobs < 10) {
+                html += `• Low job count - use "Best Fit" to fill schedule<br>`;
             }
             
             html += `
@@ -780,49 +1303,12 @@
             `;
             
             suggestionsDiv.innerHTML = html;
-        }
-
-        // Helper functions
-        function calculateDistance(lat1, lon1, lat2, lon2) {
-            // Simple distance calculation (Haversine formula)
-            const R = 3958.8; // Earth radius in miles
-            const dLat = (lat2 - lat1) * Math.PI / 180;
-            const dLon = (lon2 - lon1) * Math.PI / 180;
-            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-                    Math.sin(dLon/2) * Math.sin(dLon/2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            return R * c;
-        }
-
-        function quickAddJob(job) {
-            // Find best day for this job
-            const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
-            
-            for (let day of days) {
-                const dayHours = schedules[selectedTech.technician_id][day]
-                    .reduce((sum, j) => sum + (j.est_hours || 2), 0);
-                
-                if (dayHours + (job.est_hours || 2) <= selectedTech.max_daily_hours) {
-                    schedules[selectedTech.technician_id][day].push(job);
-                    updateScheduleDisplay();
-                    displayJobs();
-                    plotJobsOnMap();
-                    updateStats();
-                    alert(`Added WO ${job.work_order} to ${day}`);
-                    return;
-                }
-            }
-            
-            alert('No capacity available this week for this job');
-        }
-
-        function quickAddJobToDay(job, day) {
-            schedules[selectedTech.technician_id][day].push(job);
-            updateScheduleDisplay();
-            displayJobs();
-            plotJobsOnMap();
-            updateStats();
+        }       
+        // Initialize
+        window.onload = function() {
+            initMap();
+            initializeWeek();
+            loadTechs();
         };
     </script>
 </body>
