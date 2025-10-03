@@ -3,8 +3,6 @@ uvicorn[standard]
 pydantic
 python-dotenv
 httpx
-postgrest
 supabase
 pandas
 numpy
-aiofiles
