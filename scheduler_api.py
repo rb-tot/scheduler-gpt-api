@@ -164,28 +164,49 @@ def get_all_techs(active_only: bool = True):
     filters = [("active", "eq", True)] if active_only else None
     techs = sb_select("technicians", filters=filters)
     
+    # Handle empty results
+    if not techs:
+        return {"count": 0, "technicians": []}
+    
+    # Fix field name compatibility
+    for tech in techs:
+        # Handle both 'id' and 'technician_id'
+        if "id" in tech and "technician_id" not in tech:
+            tech["technician_id"] = tech["id"]
+        # Handle home location field names
+        if "home_lat" in tech and "home_latitude" not in tech:
+            tech["home_latitude"] = tech["home_lat"]
+        if "home_lng" in tech and "home_longitude" not in tech:
+            tech["home_longitude"] = tech["home_lng"]
+    
     # Get current week's schedule for each
     today = date.today()
     week_start = today - timedelta(days=today.weekday())
     week_end = week_start + timedelta(days=6)
     
     for tech in techs:
-        tech_id = tech["technician_id"]
+        tech_id = tech.get("technician_id") or tech.get("id")
+        if not tech_id:
+            continue
         
         # Get scheduled jobs this week
-        scheduled = sb_select("scheduled_jobs", filters=[
-            ("technician_id", "eq", tech_id),
-            ("date", "gte", str(week_start)),
-            ("date", "lte", str(week_end))
-        ])
+        try:
+            scheduled = sb_select("scheduled_jobs", filters=[
+                ("technician_id", "eq", tech_id),
+                ("date", "gte", str(week_start)),
+                ("date", "lte", str(week_end))
+            ])
+        except Exception as e:
+            print(f"Error loading schedule for tech {tech_id}: {e}")
+            scheduled = []
         
         # Calculate hours
         total_hours = sum(float(j.get("est_hours", 2)) for j in scheduled)
         max_weekly = float(tech.get("max_weekly_hours", 40))
         
-        tech["current_week_hours"] = total_hours
+        tech["current_week_hours"] = round(total_hours, 1)
         tech["utilization_percent"] = round((total_hours / max_weekly) * 100, 1)
-        tech["available_hours"] = max_weekly - total_hours
+        tech["available_hours"] = round(max_weekly - total_hours, 1)
         tech["scheduled_job_count"] = len(scheduled)
     
     return {"count": len(techs), "technicians": techs}
