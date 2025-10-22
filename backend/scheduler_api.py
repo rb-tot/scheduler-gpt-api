@@ -30,10 +30,9 @@ except ImportError:
 app = FastAPI(title="Unified Scheduler API", version="2.0.0")
 
 # Serve frontend
-try:
-    app.mount("/static", StaticFiles(directory="frontend"), name="static")
-except:
-    print("⚠️ Frontend directory not found")
+
+frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend")
+app.mount("/static", StaticFiles(directory=frontend_path), name="static")
 
 @app.get("/")
 def serve_app():
@@ -522,7 +521,7 @@ def bulk_assign_jobs(req: BulkAssignRequest):
                     results["details"].append(f"✗ WO {job['work_order']}: {str(e)}")
     
     return results
-    
+
 @app.get("/api/analysis/monthly")
 def monthly_analysis(year: int, month: int):
     """Monthly planning analysis"""

@@ -4,18 +4,25 @@ const API_KEY = 'devkey123';
 
 // Loading function
 function showLoading() {
-    document.getElementById('total-jobs').textContent = 'Loading...';
+    // Update summary cards to show loading
+    const summaryCards = document.getElementById('summary-cards');
+    if (summaryCards) {
+        summaryCards.innerHTML = '<div class="loading">Loading summary data...</div>';
+    }
+    
     const problemCounts = document.getElementById('problem-counts');
     if (problemCounts) {
         problemCounts.innerHTML = '<div class="loading">Analyzing...</div>';
     }
+    
     const weekGrid = document.getElementById('week-grid');
     if (weekGrid) {
         weekGrid.innerHTML = '<div class="loading">Processing...</div>';
     }
+    
     const problemList = document.getElementById('problem-list');
     if (problemList) {
-        problemList.innerHTML = '';
+        problemList.innerHTML = '<div class="loading">Finding problem jobs...</div>';
     }
 }
 
