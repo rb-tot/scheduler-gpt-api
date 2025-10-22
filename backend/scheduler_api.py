@@ -264,52 +264,65 @@ def get_tech_week_schedule(
 def assign_single_job(req: AssignJobRequest):
     """Assign one job to a tech on a specific date"""
     
-    # 1. Validate using existing endpoint logic
-    from scheduler_api import schedule_validate, ValidateReq
-    
-    validation = schedule_validate(ValidateReq(
-        work_order=req.work_order,
-        technician_id=req.technician_id,
-        date=datetime.fromisoformat(req.date).date()
-    ))
-    
-    if not validation["ok"]:
-        return {
-            "success": False,
-            "errors": validation["errors"],
-            "warnings": validation["warnings"]
-        }
-    
-    # 2. Get job details
+    # 1. Get job details
     job = sb_select("job_pool", filters=[("work_order", "eq", req.work_order)])
     if not job:
-        raise HTTPException(404, "Job not found")
+        return {"success": False, "errors": ["Job not found"]}
     
     job = job[0]
     
-    # 3. Insert into scheduled_jobs
+    # 2. Check tech eligibility
+    elig = sb_select("job_technician_eligibility", filters=[
+        ("work_order", "eq", req.work_order),
+        ("technician_id", "eq", req.technician_id)
+    ])
+    
+    if not elig:
+        return {
+            "success": False, 
+            "errors": [f"Tech {req.technician_id} is not eligible for job {req.work_order}"]
+        }
+    
+    # 3. Check if already scheduled
+    existing = sb_select("scheduled_jobs", filters=[
+        ("work_order", "eq", req.work_order)
+    ])
+    
+    if existing:
+        return {
+            "success": False,
+            "errors": [f"Job {req.work_order} is already scheduled"]
+        }
+    
+    # 4. Insert into scheduled_jobs
     scheduled_row = {
         "work_order": req.work_order,
         "technician_id": req.technician_id,
         "date": req.date,
-        "start_time": req.start_time,
-        "est_hours": float(job.get("est_hours", 2)),
+        "start_time": req.start_time if hasattr(req, 'start_time') and req.start_time else None,
+        "duration": float(job.get("est_hours", 2)),
         "site_name": job.get("site_name"),
         "site_city": job.get("site_city"),
         "site_state": job.get("site_state"),
         "created_at": datetime.now().isoformat()
     }
     
-    sb_insert("scheduled_jobs", [scheduled_row])
-    
-    # 4. Update job status
-    sb_update("job_pool", {"work_order": req.work_order}, {"jp_status": "Scheduled"})
-    
-    return {
-        "success": True,
-        "assigned": scheduled_row,
-        "warnings": validation.get("warnings", [])
-    }
+    try:
+        sb_insert("scheduled_jobs", [scheduled_row])
+        
+        # 5. Update job status
+        sb_update("job_pool", {"work_order": req.work_order}, {"jp_status": "Scheduled"})
+        
+        return {
+            "success": True,
+            "assigned": scheduled_row,
+            "message": f"Job {req.work_order} assigned to Tech {req.technician_id} on {req.date}"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "errors": [f"Failed to assign job: {str(e)}"]
+        }
 
 @app.delete("/api/schedule/remove/{work_order}")
 def remove_job_from_schedule(work_order: int):
@@ -509,7 +522,66 @@ def bulk_assign_jobs(req: BulkAssignRequest):
                     results["details"].append(f"✗ WO {job['work_order']}: {str(e)}")
     
     return results
-
+    
+@app.get("/api/analysis/monthly")
+def monthly_analysis(year: int, month: int):
+    """Monthly planning analysis"""
+    
+    from datetime import date
+    
+    # Calculate month boundaries
+    month_start = date(year, month, 1)
+    if month == 12:
+        month_end = date(year + 1, 1, 1)
+    else:
+        month_end = date(year, month + 1, 1)
+    
+    # Get all jobs for the month
+    jobs = sb_select("job_pool", filters=[
+        ("due_date", "gte", str(month_start)),
+        ("due_date", "lt", str(month_end)),
+        ("jp_status", "in", ["Call", "Waiting to Schedule"])
+    ])
+    
+    # Get techs
+    techs = sb_select("technicians", filters=[("active", "eq", True)])
+    
+    # Calculate summary
+    total_hours = sum(float(j.get("est_hours", 2)) for j in jobs)
+    tech_capacity = sum(float(t.get("max_weekly_hours", 40)) * 4 for t in techs)
+    
+    # Find problem jobs
+    problem_jobs = {"remote_locations": [], "limited_eligibility": []}
+    
+    for job in jobs:
+        elig = sb_select("job_technician_eligibility", filters=[
+            ("work_order", "eq", job["work_order"])
+        ])
+        
+        if len(elig) <= 2:
+            problem_jobs["limited_eligibility"].append({
+                "work_order": job["work_order"],
+                "site_name": job.get("site_name"),
+                "est_hours": job.get("est_hours", 2),
+                "tech_names": [e.get("technician_name", "Unknown") for e in elig]
+            })
+    
+    return {
+        "summary": {
+            "total_jobs": len(jobs),
+            "total_job_hours": round(total_hours, 1),
+            "tech_count": len(techs),
+            "total_tech_capacity": round(tech_capacity, 1),
+            "utilization_percent": round((total_hours / tech_capacity * 100) if tech_capacity > 0 else 0, 1),
+            "problem_jobs_count": {
+                "remote": 0,
+                "limited_techs": len(problem_jobs["limited_eligibility"]),
+                "night": 0,
+                "friday_restricted": 0
+            }
+        },
+        "problem_jobs": problem_jobs
+    }
 # ============================================================================
 # RUN
 # ============================================================================
