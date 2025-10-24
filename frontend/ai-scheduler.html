@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Scheduler - Geographic Approach</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f7fa;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 16px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .card h2 {
+            font-size: 20px;
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #555;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e1e4e8;
+            border-radius: 6px;
+            font-size: 15px;
+            transition: border-color 0.2s;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .region-checkboxes {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .region-checkbox {
+            display: flex;
+            align-items: start;
+            padding: 15px;
+            border: 2px solid #e1e4e8;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .region-checkbox:hover {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+
+        .region-checkbox input[type="checkbox"] {
+            margin-right: 12px;
+            margin-top: 3px;
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .region-info {
+            flex: 1;
+        }
+
+        .region-info strong {
+            display: block;
+            color: #333;
+            font-size: 15px;
+            margin-bottom: 5px;
+        }
+
+        .region-stats {
+            font-size: 13px;
+            color: #666;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 14px 32px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+        }
+
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+            font-style: italic;
+        }
+
+        .error {
+            color: #dc2626;
+            background: #fee2e2;
+            padding: 15px;
+            border-radius: 6px;
+            border-left: 4px solid #dc2626;
+        }
+
+        .schedule-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #e1e4e8;
+        }
+
+        .stats {
+            display: flex;
+            gap: 30px;
+        }
+
+        .stat {
+            text-align: center;
+        }
+
+        .stat strong {
+            display: block;
+            font-size: 28px;
+            color: #667eea;
+        }
+
+        .stat span {
+            font-size: 13px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .tech-schedule {
+            margin-top: 20px;
+        }
+
+        .tech-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .region-badge {
+            background: #667eea;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .day-schedule {
+            margin-bottom: 20px;
+            border: 2px solid #e1e4e8;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .day-header {
+            background: #f8f9fa;
+            padding: 12px 15px;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            border-bottom: 2px solid #e1e4e8;
+        }
+
+        .day-header strong {
+            font-size: 16px;
+            color: #333;
+        }
+
+        .day-date {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .day-hours {
+            margin-left: auto;
+            font-size: 14px;
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        .hotel-badge {
+            background: #fbbf24;
+            color: #78350f;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        .day-jobs {
+            padding: 15px;
+        }
+
+        .no-jobs {
+            text-align: center;
+            padding: 20px;
+            color: #999;
+            font-style: italic;
+        }
+
+        .job-card {
+            background: #f8f9ff;
+            border-left: 4px solid #667eea;
+            padding: 12px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+        }
+
+        .job-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .priority-badge {
+            background: #10b981;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            text-transform: uppercase;
+        }
+
+        .job-details {
+            font-size: 14px;
+            color: #555;
+        }
+
+        .job-details small {
+            color: #999;
+        }
+
+        .warnings-section, .suggestions-section {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 6px;
+        }
+
+        .warnings-section {
+            background: #fef3c7;
+            border-left: 4px solid #f59e0b;
+        }
+
+        .suggestions-section {
+            background: #dbeafe;
+            border-left: 4px solid #3b82f6;
+        }
+
+        .warnings-section h4, .suggestions-section h4 {
+            margin-bottom: 10px;
+        }
+
+        .warnings-section ul, .suggestions-section ul {
+            margin-left: 20px;
+        }
+
+        .warnings-section li, .suggestions-section li {
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🤖 AI Scheduler - Geographic Approach</h1>
+            <p>Intelligent route optimization with regional focus</p>
+        </div>
+
+        <!-- Step 1: Select Technician -->
+        <div class="card">
+            <h2>Step 1: Select Technician</h2>
+            <div class="form-group">
+                <label for="tech-select">Choose technician(s) - Hold Ctrl (or Cmd) to select multiple:</label>
+                <select id="tech-select" class="form-control" multiple size="8" style="height: 200px;"></select><select id="tech-select" class="form-control">
+                    <option value="">Loading technicians...</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Step 2: Select Regions -->
+        <div class="card">
+            <h2>Step 2: Select Regions to Schedule</h2>
+            <div id="region-checkboxes" class="region-checkboxes">
+                <p style="color: #666;">Select a technician first</p>
+            </div>
+        </div>
+
+        <!-- Step 3: Configure Schedule -->
+        <div class="card">
+            <h2>Step 3: Configure Schedule</h2>
+            
+            <div class="form-group">
+                <label for="week-select">Week to schedule:</label>
+                <input type="week" id="week-select" class="form-control">
+            </div>
+
+            <div class="form-group">
+                <label for="sow-filter">Filter by SOW (optional):</label>
+                <select id="sow-filter" class="form-control">
+                    <option value="">All SOWs</option>
+                    <option value="NT">NT (Night Testing)</option>
+                    <option value="ACI">ACI</option>
+                    <option value="ATG">ATG</option>
+                    <option value="LDT">LDT</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+
+            <button id="generate-btn" class="btn-primary">
+                🚀 Generate Schedule
+            </button>
+        </div>
+
+        <!-- Results -->
+        <div class="card" id="schedule-results" style="display: none;">
+            <div class="loading">Click "Generate Schedule" to begin</div>
+        </div>
+    </div>
+
+    <script>
+        const API_KEY = 'devkey123';
+        let selectedTechId = null;
+        let selectedRegions = [];
+
+        // ============================================================================
+        // INITIALIZATION
+        // ============================================================================
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🚀 AI Scheduler initialized');
+            
+            // Set default week to current week
+            const today = new Date();
+            const currentWeek = getWeekNumber(today);
+            const year = today.getFullYear();
+            document.getElementById('week-select').value = `${year}-W${currentWeek.toString().padStart(2, '0')}`;
+            
+            loadTechnicians();
+            
+            // Tech selection handler
+            const techSelect = document.getElementById('tech-select');
+            if (techSelect) {
+                techSelect.addEventListener('change', function() {
+                    const techId = this.value;
+                    if (techId) {
+                        selectedTechId = techId;
+                        loadRegionsForTech(techId);
+                    } else {
+                        selectedTechId = null;
+                        document.getElementById('region-checkboxes').innerHTML = 
+                            '<p style="color: #666;">Select a technician first</p>';
+                    }
+                });
+            }
+            
+            // Generate schedule button
+            const generateBtn = document.getElementById('generate-btn');
+            if (generateBtn) {
+                generateBtn.addEventListener('click', generateSchedule);
+            }
+        });
+
+        // ============================================================================
+        // LOAD TECHNICIANS
+        // ============================================================================
+        
+        async function loadTechnicians() {
+            const select = document.getElementById('tech-select');
+            if (!select) {
+                console.error('tech-select element not found!');
+                return;
+            }
+            
+            select.innerHTML = '<option value="">Loading technicians...</option>';
+            
+            try {
+                const response = await fetch('/api/technicians/all', {
+                    headers: { 'X-API-Key': API_KEY }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                if (!data.technicians || data.technicians.length === 0) {
+                    select.innerHTML = '<option value="">No technicians found</option>';
+                    return;
+                }
+                
+                select.innerHTML = '<option value="">Select a technician...</option>' +
+                    data.technicians.map(tech => 
+                        `<option value="${tech.technician_id}">${tech.name} - ${tech.home_location || 'Unknown location'}</option>`
+                    ).join('');
+                
+                console.log(`✓ Loaded ${data.technicians.length} technicians`);
+                
+            } catch (error) {
+                console.error('Error loading technicians:', error);
+                select.innerHTML = '<option value="">Error loading technicians</option>';
+            }
+        }
+
+        // ============================================================================
+        // LOAD REGIONS FOR SELECTED TECH
+        // ============================================================================
+        
+        async function loadRegionsForTech(techId) {
+            const container = document.getElementById('region-checkboxes');
+            if (!container) {
+                console.error('region-checkboxes element not found!');
+                return;
+            }
+            
+            container.innerHTML = '<div class="loading">Loading regions...</div>';
+            
+            try {
+                // Get current month for analysis
+                const now = new Date();
+                const monthYear = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                
+                console.log(`📊 Loading regions for tech ${techId}, month ${monthYear}`);
+                
+                const response = await fetch(
+                    `/api/schedule/analyze-regions?tech_id=${techId}&month_year=${monthYear}`,
+                    {
+                        headers: { 'X-API-Key': API_KEY }
+                    }
+                );
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                }
+                
+                const data = await response.json();
+                
+                console.log('Region data received:', data);
+                
+                if (!data.success) {
+                    throw new Error(data.error || 'Failed to load regions');
+                }
+                
+                if (!data.regions || data.regions.length === 0) {
+                    container.innerHTML = '<p style="color: #666; padding: 10px;">No regions found with jobs for this tech this month</p>';
+                    return;
+                }
+                
+                // Display regions as checkboxes
+                container.innerHTML = data.regions.map(region => `
+                    <label class="region-checkbox">
+                        <input type="checkbox" value="${region.region_name}" checked>
+                        <div class="region-info">
+                            <strong>${region.region_name.replace(/_/g, ' ')}</strong>
+                            <div class="region-stats">
+                                ${region.job_count} jobs • ${Math.round(region.total_work_hours)}h work
+                                ${region.distance_from_home ? ` • ${Math.round(region.distance_from_home)}mi away` : ''}
+                                ${region.requires_hotel ? ' • 🏨 Hotel needed' : ''}
+                            </div>
+                        </div>
+                    </label>
+                `).join('');
+                
+                console.log(`✓ Loaded ${data.regions.length} regions`);
+                
+            } catch (error) {
+                console.error('Error loading regions:', error);
+                container.innerHTML = `
+                    <div class="error">
+                        <strong>❌ Failed to load regions</strong><br>
+                        ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        // ============================================================================
+        // GENERATE SCHEDULE
+        // ============================================================================
+        
+        async function generateSchedule() {
+            if (!selectedTechId) {
+                alert('Please select a technician first');
+                return;
+            }
+            
+            // Get selected regions
+            const checkboxes = document.querySelectorAll('#region-checkboxes input[type="checkbox"]:checked');
+            selectedRegions = Array.from(checkboxes).map(cb => cb.value);
+            
+            if (selectedRegions.length === 0) {
+                alert('Please select at least one region');
+                return;
+            }
+            
+            // Get week start date
+            const weekInput = document.getElementById('week-select').value;
+            if (!weekInput) {
+                alert('Please select a week');
+                return;
+            }
+            
+            // Convert week input (2025-W37) to actual date
+            const [year, weekNum] = weekInput.split('-W');
+            const weekStart = getDateOfISOWeek(parseInt(weekNum), parseInt(year));
+            const weekStartStr = weekStart.toISOString().split('T')[0];
+            
+            // Get SOW filter if any
+            const sowFilter = document.getElementById('sow-filter').value || null;
+            
+            // Show results section and loading state
+            const resultsDiv = document.getElementById('schedule-results');
+            resultsDiv.style.display = 'block';
+            resultsDiv.innerHTML = `
+                <div class="loading">
+                    <div style="font-size: 48px; margin-bottom: 20px;">⏳</div>
+                    <div style="font-size: 18px; color: #666;">Generating intelligent schedule...</div>
+                    <div style="font-size: 14px; color: #999; margin-top: 10px;">
+                        Analyzing ${selectedRegions.length} regions for optimal routes
+                    </div>
+                </div>
+            `;
+            
+            try {
+                console.log('🚀 Generating schedule:', {
+                    tech_ids: Array.from(document.getElementById('tech-select').selectedOptions)
+                        .map(opt => parseInt(opt.value))
+                        .filter(id => !isNaN(id)),
+                    region_names: selectedRegions,
+                    week_start: weekStartStr,
+                    sow_filter: sowFilter
+                });
+                
+                const response = await fetch('/api/schedule/generate-week-smart', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-Key': API_KEY
+                    },
+                    body: JSON.stringify({
+                        tech_ids: [parseInt(selectedTechId)],
+                        region_names: selectedRegions,
+                        week_start: weekStartStr,
+                        sow_filter: sowFilter,
+                        target_weekly_hours: 40
+                    })
+                });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                }
+                
+                const data = await response.json();
+                console.log('Schedule response:', data);
+                
+                displayScheduleResults(data);
+                
+            } catch (error) {
+                console.error('Error generating schedule:', error);
+                resultsDiv.innerHTML = `
+                    <div class="error">
+                        <h3>❌ Failed to Generate Schedule</h3>
+                        <p>${error.message}</p>
+                        <details style="margin-top: 10px;">
+                            <summary style="cursor: pointer;">Technical Details</summary>
+                            <pre style="font-size: 12px; margin-top: 10px; white-space: pre-wrap;">${error.stack || error}</pre>
+                        </details>
+                    </div>
+                `;
+            }
+        }
+        async function saveScheduleToDatabase() {
+            if (!window.currentSchedule) {
+                alert('No schedule to save');
+                return;
+            }
+            
+            const statusDiv = document.getElementById('save-status');
+            statusDiv.innerHTML = '<div style="color: #666;">💾 Saving...</div>';
+            
+            try {
+                const response = await fetch('/api/schedule/save', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-Key': API_KEY
+                    },
+                    body: JSON.stringify(window.currentSchedule)
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    statusDiv.innerHTML = `
+                        <div style="color: #10b981; padding: 15px; background: #d1fae5; border-radius: 6px; border-left: 4px solid #10b981;">
+                            <strong>✅ Schedule Saved Successfully!</strong><br>
+                            ${result.jobs_saved} jobs saved for ${result.tech_name}<br>
+                            Week starting ${result.week_start}
+                        </div>
+                    `;
+                    
+                    // Disable the save button to prevent double-saving
+                    event.target.disabled = true;
+                    event.target.textContent = '✅ Saved';
+                    event.target.style.background = '#6b7280';
+                } else {
+                    throw new Error(result.error || 'Failed to save');
+                }
+                
+            } catch (error) {
+                console.error('Error saving schedule:', error);
+                statusDiv.innerHTML = `
+                    <div style="color: #dc2626; padding: 15px; background: #fee2e2; border-radius: 6px; border-left: 4px solid #dc2626;">
+                        <strong>❌ Failed to Save</strong><br>
+                        ${error.message}
+                    </div>
+                `;
+            }
+        }
+        // ============================================================================
+        // DISPLAY RESULTS
+        // ============================================================================
+        
+        function displayScheduleResults(data) {
+            const resultsDiv = document.getElementById('schedule-results');
+            
+            if (!data.success || !data.tech_schedules || data.tech_schedules.length === 0) {
+                resultsDiv.innerHTML = `
+                    <div style="padding: 20px; background: #fef3c7; border-radius: 8px;">
+                        <h3>⚠️ No schedules generated</h3>
+                        ${data.warnings && data.warnings.length > 0 ? `
+                            <div style="margin-top: 15px;">
+                                <strong>Warnings:</strong>
+                                <ul>${data.warnings.map(w => `<li>${w}</li>`).join('')}</ul>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+                return;
+            }
+            
+            const techSchedule = data.tech_schedules[0];
+            
+            let html = `
+                <div class="schedule-header">
+                    <h2>📅 Generated Schedule</h2>
+                    <div class="stats">
+                        <div class="stat">
+                            <strong>${data.total_jobs_scheduled}</strong>
+                            <span>Jobs Scheduled</span>
+                        </div>
+                        <div class="stat">
+                            <strong>${data.total_hours_scheduled}h</strong>
+                            <span>Total Hours</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ADD THIS SAVE BUTTON -->
+                <div style="margin-bottom: 20px; text-align: center;">
+                    <button onclick="saveScheduleToDatabase()" class="btn-primary" style="background: #10b981; font-size: 18px; padding: 15px 40px;">
+                        💾 Save Schedule to Database
+                    </button>
+                    <div id="save-status" style="margin-top: 10px;"></div>
+                </div>
+
+                <div class="tech-schedule">
+                    <div class="tech-header">
+                        <h3>${techSchedule.tech_name}</h3>
+                        <div class="region-badge">${techSchedule.region_focus}</div>
+                    </div>
+            `;
+            
+            // Display each day
+            const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
+            
+            days.forEach(day => {
+                const daySchedule = techSchedule.schedule[day];
+                if (!daySchedule) return;
+                
+                html += `
+                    <div class="day-schedule">
+                        <div class="day-header">
+                            <strong>${daySchedule.day_name}</strong>
+                            <span class="day-date">${daySchedule.date}</span>
+                            <span class="day-hours">${daySchedule.total_hours}h total (${daySchedule.work_hours}h work + ${daySchedule.drive_hours}h drive)</span>
+                            ${daySchedule.hotel_stay ? `<span class="hotel-badge">🏨 ${daySchedule.hotel_location}</span>` : ''}
+                        </div>
+                        <div class="day-jobs">
+                            ${daySchedule.jobs.length === 0 ? 
+                                '<div class="no-jobs">No jobs scheduled</div>' :
+                                daySchedule.jobs.map(job => `
+                                    <div class="job-card">
+                                        <div class="job-header">
+                                            <strong>WO ${job.work_order}</strong>
+                                            <span class="priority-badge">${job.priority}</span>
+                                        </div>
+                                        <div class="job-details">
+                                            ${job.site_name}<br>
+                                            <small>${job.sow} • ${job.est_hours}h</small>
+                                        </div>
+                                    </div>
+                                `).join('')
+                            }
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += '</div>'; // close tech-schedule
+            
+            // Display warnings and suggestions
+            if (data.warnings && data.warnings.length > 0) {
+                html += `
+                    <div class="warnings-section">
+                        <h4>⚠️ Warnings</h4>
+                        <ul>${data.warnings.map(w => `<li>${w}</li>`).join('')}</ul>
+                    </div>
+                `;
+            }
+            
+            if (data.suggestions && data.suggestions.length > 0) {
+                html += `
+                    <div class="suggestions-section">
+                        <h4>💡 Suggestions</h4>
+                        <ul>${data.suggestions.map(s => `<li>${s}</li>`).join('')}</ul>
+                    </div>
+                `;
+            }
+            
+            resultsDiv.innerHTML = html;
+        }
+
+        // ============================================================================
+        // UTILITY FUNCTIONS
+        // ============================================================================
+        
+        function getWeekNumber(d) {
+            d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+            d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+            const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+            const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+            return weekNo;
+        }
+        
+        function getDateOfISOWeek(week, year) {
+            const simple = new Date(year, 0, 1 + (week - 1) * 7);
+            const dow = simple.getDay();
+            const ISOweekStart = simple;
+            if (dow <= 4)
+                ISOweekStart.setDate(simple.getDate() - simple.getDay() + 1);
+            else
+                ISOweekStart.setDate(simple.getDate() + 8 - simple.getDay());
+            return ISOweekStart;
+        }
+    </script>
+</body>
+</html>
+
+
+
+

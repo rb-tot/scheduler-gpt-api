@@ -33,29 +33,6 @@ app = FastAPI(title="Unified Scheduler API", version="2.1.0")
 
 # Serve frontend
 
-# ----------------------------------------------------------------------------
-# REQUEST/RESPONSE MODELS
-# ----------------------------------------------------------------------------
-
-class ScheduleWeekRequest(BaseModel):
-    """Request to schedule a week using geographic-first approach"""
-    tech_ids: List[int]  # Can be multiple techs (we'll loop through them)
-    region_names: List[str]  # User-selected regions to focus on
-    week_start: str  # YYYY-MM-DD format
-    sow_filter: Optional[str] = None  # Filter by SOW (e.g., "NT")
-    target_weekly_hours: int = 40
-
-class ScheduleWeekResponse(BaseModel):
-    """Response with full week schedule"""
-    success: bool
-    tech_schedules: List[dict]  # One per tech
-    total_jobs_scheduled: int
-    total_hours_scheduled: float
-    warnings: List[str]
-    suggestions: List[str]
-
-frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend")
-app.mount("/static", StaticFiles(directory=frontend_path), name="static")
 
 @app.get("/")
 def serve_app():
@@ -94,6 +71,29 @@ class BulkAssignRequest(BaseModel):
     mode: str  # "urgent" | "fill_capacity" | "monthly_spread"
     technician_ids: Optional[List[int]] = None
     target_utilization: Optional[float] = 0.8
+# ----------------------------------------------------------------------------
+# REQUEST/RESPONSE MODELS
+# ----------------------------------------------------------------------------
+
+class ScheduleWeekRequest(BaseModel):
+    """Request to schedule a week using geographic-first approach"""
+    tech_ids: List[int]  # Can be multiple techs (we'll loop through them)
+    region_names: List[str]  # User-selected regions to focus on
+    week_start: str  # YYYY-MM-DD format
+    sow_filter: Optional[str] = None  # Filter by SOW (e.g., "NT")
+    target_weekly_hours: int = 40
+
+class ScheduleWeekResponse(BaseModel):
+    """Response with full week schedule"""
+    success: bool
+    tech_schedules: List[dict]  # One per tech
+    total_jobs_scheduled: int
+    total_hours_scheduled: float
+    warnings: List[str]
+    suggestions: List[str]
+
+frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend")
+app.mount("/static", StaticFiles(directory=frontend_path), name="static")
 
 # ============================================================================
 # CORE ENDPOINTS
@@ -187,8 +187,7 @@ def get_unscheduled_jobs(
 @app.post("/api/schedule/generate-week-smart")
 def generate_week_smart_schedule(
     req: ScheduleWeekRequest,
-    x_api_key: Optional[str] = Header(None, alias="X-API-Key")
-):
+ ):
     """
     🆕 SMART SCHEDULER - Geographic-First Approach
     
@@ -210,7 +209,7 @@ def generate_week_smart_schedule(
     }
     """
     # Verify auth
-    verify_auth(x_api_key)
+   
     
     try:
         # Parse week start date
@@ -269,7 +268,107 @@ def generate_week_smart_schedule(
             "warnings": [str(e)],
             "suggestions": []
         }
-
+@app.post("/api/schedule/save")
+def save_schedule_to_database(
+    schedule_data: dict,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key")
+):
+    """
+    Save a generated schedule to the database
+    
+    Expects:
+    {
+        "tech_schedule": {...},  # The full schedule from generate-week-smart
+        "week_start": "2025-10-20"
+    }
+    """
+    verify_auth(x_api_key)
+    
+    try:
+        tech_schedule = schedule_data.get('tech_schedule')
+        week_start = schedule_data.get('week_start')
+        
+        if not tech_schedule or not week_start:
+            return {
+                "success": False,
+                "error": "Missing required fields: tech_schedule, week_start"
+            }
+        
+        tech_id = tech_schedule['tech_id']
+        tech_name = tech_schedule['tech_name']
+        
+        saved_jobs = []
+        work_orders_scheduled = []
+        
+        # Process each day
+        days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
+        for day in days:
+            day_schedule = tech_schedule['schedule'].get(day, {})
+            day_jobs = day_schedule.get('jobs', [])
+            
+            for job in day_jobs:
+                work_order = job['work_order']
+                
+                # Get job details from job_pool
+                job_details = sb_select("job_pool", filters=[
+                    ("work_order", "eq", work_order)
+                ])
+                
+                if not job_details:
+                    continue
+                
+                job_detail = job_details[0]
+                
+                # Create scheduled_jobs record
+                scheduled_record = {
+                    "work_order": work_order,
+                    "technician_id": tech_id,
+                    "assigned_tech_name": tech_name,
+                    "date": day_schedule['date'],
+                    "site_name": job_detail.get('site_name'),
+                    "site_city": job_detail.get('site_city'),
+                    "site_state": job_detail.get('site_state'),
+                    "site_id": job_detail.get('site_id'),
+                    "duration": float(job['est_hours']),
+                    "sow_1": job['sow'],
+                    "due_date": job_detail.get('due_date'),
+                    "is_night_job": job_detail.get('night_test', False)
+                }
+                
+                saved_jobs.append(scheduled_record)
+                work_orders_scheduled.append(work_order)
+        
+        if not saved_jobs:
+            return {
+                "success": False,
+                "error": "No jobs to save"
+            }
+        
+        # Save to database
+        sb_insert("scheduled_jobs", saved_jobs)
+        
+        # Update job_pool status
+        for wo in work_orders_scheduled:
+            sb_update("job_pool", {"work_order": wo}, {"jp_status": "Scheduled"})
+        
+        return {
+            "success": True,
+            "jobs_saved": len(saved_jobs),
+            "work_orders": work_orders_scheduled,
+            "tech_id": tech_id,
+            "tech_name": tech_name,
+            "week_start": week_start
+        }
+        
+    except Exception as e:
+        import traceback
+        print(f"ERROR saving schedule: {str(e)}")
+        print(traceback.format_exc())
+        
+        return {
+            "success": False,
+            "error": str(e)
+        }
 # ----------------------------------------------------------------------------
 # HELPER ENDPOINT: Preview Region Analysis
 # ----------------------------------------------------------------------------
@@ -279,7 +378,7 @@ def analyze_regions_preview(
     tech_id: int,
     month_year: str,  # Format: "2025-09"
     sow_filter: Optional[str] = None,
-    x_api_key: Optional[str] = Header(None, alias="X-API-Key")
+
 ):
     """
     Preview which regions have jobs for a tech in a given month
@@ -288,7 +387,7 @@ def analyze_regions_preview(
     
     Example: GET /api/schedule/analyze-regions?tech_id=7&month_year=2025-09
     """
-    verify_auth(x_api_key)
+    
     
     try:
         # Parse month
