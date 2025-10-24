@@ -9,6 +9,8 @@ from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import scheduler_v5_geographic as sched_v5
+
 # Environment setup
 from dotenv import load_dotenv
 load_dotenv()
@@ -27,9 +29,30 @@ except ImportError:
 # ============================================================================
 # APP SETUP
 # ============================================================================
-app = FastAPI(title="Unified Scheduler API", version="2.0.0")
+app = FastAPI(title="Unified Scheduler API", version="2.1.0")
 
 # Serve frontend
+
+# ----------------------------------------------------------------------------
+# REQUEST/RESPONSE MODELS
+# ----------------------------------------------------------------------------
+
+class ScheduleWeekRequest(BaseModel):
+    """Request to schedule a week using geographic-first approach"""
+    tech_ids: List[int]  # Can be multiple techs (we'll loop through them)
+    region_names: List[str]  # User-selected regions to focus on
+    week_start: str  # YYYY-MM-DD format
+    sow_filter: Optional[str] = None  # Filter by SOW (e.g., "NT")
+    target_weekly_hours: int = 40
+
+class ScheduleWeekResponse(BaseModel):
+    """Response with full week schedule"""
+    success: bool
+    tech_schedules: List[dict]  # One per tech
+    total_jobs_scheduled: int
+    total_hours_scheduled: float
+    warnings: List[str]
+    suggestions: List[str]
 
 frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend")
 app.mount("/static", StaticFiles(directory=frontend_path), name="static")
@@ -157,6 +180,147 @@ def get_unscheduled_jobs(
         "jobs": jobs,
         "summary": summary
     }
+# ----------------------------------------------------------------------------
+# NEW ENDPOINT
+# ----------------------------------------------------------------------------
+
+@app.post("/api/schedule/generate-week-smart")
+def generate_week_smart_schedule(
+    req: ScheduleWeekRequest,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key")
+):
+    """
+    🆕 SMART SCHEDULER - Geographic-First Approach
+    
+    This endpoint:
+    1. Analyzes regions for job distribution
+    2. Picks best region to focus on
+    3. Schedules ALL jobs in that region (no wasted trips)
+    4. Optimizes routes within region
+    5. Calculates drive times and hotel stays
+    6. Suggests nearby regions if capacity not filled
+    
+    Example request:
+    {
+        "tech_ids": [7],
+        "region_names": ["CO_Denver_Metro", "CO_NoCo"],
+        "week_start": "2025-09-08",
+        "sow_filter": "NT",
+        "target_weekly_hours": 40
+    }
+    """
+    # Verify auth
+    verify_auth(x_api_key)
+    
+    try:
+        # Parse week start date
+        week_start = datetime.fromisoformat(req.week_start).date()
+        
+        # Schedule for each tech
+        tech_schedules = []
+        total_jobs = 0
+        total_hours = 0
+        all_warnings = []
+        all_suggestions = []
+        
+        for tech_id in req.tech_ids:
+            print(f"\n{'='*80}")
+            print(f"Scheduling Tech {tech_id}")
+            print(f"{'='*80}")
+            
+            result = sched_v5.schedule_week_geographic(
+                tech_id=tech_id,
+                region_names=req.region_names,
+                week_start=week_start,
+                sow_filter=req.sow_filter,
+                target_weekly_hours=req.target_weekly_hours
+            )
+            
+            if "error" in result:
+                all_warnings.append(f"Tech {tech_id}: {result['error']}")
+                continue
+            
+            tech_schedules.append(result)
+            total_jobs += result.get('jobs_scheduled', 0)
+            total_hours += result.get('total_hours', 0)
+            all_warnings.extend(result.get('warnings', []))
+            all_suggestions.extend(result.get('suggestions', []))
+        
+        return {
+            "success": True,
+            "tech_schedules": tech_schedules,
+            "total_jobs_scheduled": total_jobs,
+            "total_hours_scheduled": round(total_hours, 2),
+            "warnings": all_warnings,
+            "suggestions": all_suggestions
+        }
+        
+    except Exception as e:
+        import traceback
+        print(f"ERROR: {str(e)}")
+        print(traceback.format_exc())
+        
+        return {
+            "success": False,
+            "error": str(e),
+            "tech_schedules": [],
+            "total_jobs_scheduled": 0,
+            "total_hours_scheduled": 0,
+            "warnings": [str(e)],
+            "suggestions": []
+        }
+
+# ----------------------------------------------------------------------------
+# HELPER ENDPOINT: Preview Region Analysis
+# ----------------------------------------------------------------------------
+
+@app.get("/api/schedule/analyze-regions")
+def analyze_regions_preview(
+    tech_id: int,
+    month_year: str,  # Format: "2025-09"
+    sow_filter: Optional[str] = None,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key")
+):
+    """
+    Preview which regions have jobs for a tech in a given month
+    
+    Helps user decide which regions to include in schedule request
+    
+    Example: GET /api/schedule/analyze-regions?tech_id=7&month_year=2025-09
+    """
+    verify_auth(x_api_key)
+    
+    try:
+        # Parse month
+        year, month = map(int, month_year.split('-'))
+        month_start = date(year, month, 1)
+        
+        if month == 12:
+            month_end = date(year + 1, 1, 1) - timedelta(days=1)
+        else:
+            month_end = date(year, month + 1, 1) - timedelta(days=1)
+        
+        # Get region analysis
+        regions = sched_v5.analyze_regions_for_tech(
+            tech_id=tech_id,
+            month_start=month_start,
+            month_end=month_end,
+            sow_filter=sow_filter
+        )
+        
+        return {
+            "success": True,
+            "tech_id": tech_id,
+            "month": month_year,
+            "regions": regions
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "regions": []
+        }
 
 # ----------------------------------------------------------------------------
 # TECHNICIANS
@@ -524,63 +688,283 @@ def bulk_assign_jobs(req: BulkAssignRequest):
 
 @app.get("/api/analysis/monthly")
 def monthly_analysis(year: int, month: int):
-    """Monthly planning analysis"""
+    """Monthly planning analysis with regional breakdown and drive time estimates"""
     
-    from datetime import date
+    from datetime import date, timedelta
+    from collections import defaultdict
     
-    # Calculate month boundaries
-    month_start = date(year, month, 1)
-    if month == 12:
-        month_end = date(year + 1, 1, 1)
-    else:
-        month_end = date(year, month + 1, 1)
-    
-    # Get all jobs for the month
-    jobs = sb_select("job_pool", filters=[
-        ("due_date", "gte", str(month_start)),
-        ("due_date", "lt", str(month_end)),
-        ("jp_status", "in", ["Call", "Waiting to Schedule"])
-    ])
-    
-    # Get techs
-    techs = sb_select("technicians", filters=[("active", "eq", True)])
-    
-    # Calculate summary
-    total_hours = sum(float(j.get("est_hours", 2)) for j in jobs)
-    tech_capacity = sum(float(t.get("max_weekly_hours", 40)) * 4 for t in techs)
-    
-    # Find problem jobs
-    problem_jobs = {"remote_locations": [], "limited_eligibility": []}
-    
-    for job in jobs:
-        elig = sb_select("job_technician_eligibility", filters=[
-            ("work_order", "eq", job["work_order"])
+    try:
+        # Calculate month boundaries
+        month_start = date(year, month, 1)
+        if month == 12:
+            month_end = date(year + 1, 1, 1)
+        else:
+            month_end = date(year, month + 1, 1)
+        
+        # Get all jobs for the month
+        jobs = sb_select("job_pool", filters=[
+            ("due_date", "gte", str(month_start)),
+            ("due_date", "lt", str(month_end)),
+            ("jp_status", "in", ["Call", "Waiting to Schedule"])
         ])
         
-        if len(elig) <= 2:
-            problem_jobs["limited_eligibility"].append({
-                "work_order": job["work_order"],
-                "site_name": job.get("site_name"),
-                "est_hours": job.get("est_hours", 2),
-                "tech_names": [e.get("technician_name", "Unknown") for e in elig]
-            })
-    
-    return {
-        "summary": {
-            "total_jobs": len(jobs),
-            "total_job_hours": round(total_hours, 1),
-            "tech_count": len(techs),
-            "total_tech_capacity": round(tech_capacity, 1),
-            "utilization_percent": round((total_hours / tech_capacity * 100) if tech_capacity > 0 else 0, 1),
-            "problem_jobs_count": {
-                "remote": 0,
-                "limited_techs": len(problem_jobs["limited_eligibility"]),
-                "night": 0,
-                "friday_restricted": 0
+        if not jobs:
+            return {
+                "summary": {
+                    "total_jobs": 0,
+                    "total_work_hours": 0,
+                    "total_drive_hours": 0,
+                    "total_hours": 0,
+                    "tech_count": 0,
+                    "total_tech_capacity": 0,
+                    "utilization_percent": 0
+                },
+                "regional_breakdown": [],
+                "weekly_breakdown": [],
+                "problem_jobs": {"remote_locations": [], "limited_eligibility": []}
             }
-        },
-        "problem_jobs": problem_jobs
-    }
+        
+        # Get techs and regions
+        techs = sb_select("technicians", filters=[("active", "eq", True)])
+        regions = sb_select("regions")
+        
+        # Create region lookup
+        region_lookup = {}
+        for region in regions:
+            region_lookup[region['region_name']] = {
+                'center_lat': region.get('center_latitude'),
+                'center_lng': region.get('center_longitude')
+            }
+        
+        # Helper function for distance calculation
+        def haversine(lat1, lon1, lat2, lon2):
+            from math import radians, sin, cos, sqrt, atan2
+            R = 3958.8  # Earth radius in miles
+            lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
+            dlat = lat2 - lat1
+            dlon = lon2 - lon1
+            a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+            c = 2 * atan2(sqrt(a), sqrt(1-a))
+            return R * c
+        
+        # Calculate total work hours
+        total_work_hours = sum(float(j.get("est_hours", 2)) for j in jobs)
+        
+        # Regional breakdown
+        regional_stats = defaultdict(lambda: {
+            'jobs': 0,
+            'work_hours': 0,
+            'job_list': []
+        })
+        
+        for job in jobs:
+            region = job.get('region', 'Unknown')
+            regional_stats[region]['jobs'] += 1
+            regional_stats[region]['work_hours'] += float(job.get('est_hours', 2))
+            regional_stats[region]['job_list'].append(job)
+        
+        # Estimate drive time by region
+        # Simple estimation: 30 miles average between jobs in same region
+        # Plus distance from nearest tech home to region center
+        AVG_SPEED = 55  # mph
+        AVG_INTRA_REGION_DISTANCE = 30  # miles between jobs in same region
+        
+        total_drive_hours = 0
+        regional_breakdown = []
+        
+        for region_name, stats in regional_stats.items():
+            job_count = stats['jobs']
+            work_hours = stats['work_hours']
+            
+            # Estimate drive time for this region
+            # Formula: (jobs - 1) × avg_distance_between_jobs + 2 × home_to_region
+            if job_count > 0:
+                # Intra-region driving (between jobs)
+                intra_region_miles = (job_count - 1) * AVG_INTRA_REGION_DISTANCE if job_count > 1 else 0
+                
+                # Find nearest tech to this region
+                min_home_distance = 999999
+                if region_name in region_lookup and region_lookup[region_name]['center_lat']:
+                    region_center = region_lookup[region_name]
+                    for tech in techs:
+                        if tech.get('home_latitude') and region_center['center_lat']:
+                            dist = haversine(
+                                tech['home_latitude'], tech['home_longitude'],
+                                region_center['center_lat'], region_center['center_lng']
+                            )
+                            min_home_distance = min(min_home_distance, dist)
+                else:
+                    min_home_distance = 50  # Default assumption if no coordinates
+                
+                # Home to region and back (assuming tech returns home each day)
+                # For weekly planning, assume they go out once per day on average
+                days_in_region = max(1, job_count // 3)  # Assume ~3 jobs per day
+                home_to_region_miles = min_home_distance * 2 * days_in_region
+                
+                total_region_miles = intra_region_miles + home_to_region_miles
+                region_drive_hours = total_region_miles / AVG_SPEED
+            else:
+                region_drive_hours = 0
+            
+            total_drive_hours += region_drive_hours
+            
+            regional_breakdown.append({
+                'region': region_name,
+                'jobs': job_count,
+                'work_hours': round(work_hours, 1),
+                'drive_hours': round(region_drive_hours, 1),
+                'total_hours': round(work_hours + region_drive_hours, 1)
+            })
+        
+        # Sort by total hours descending
+        regional_breakdown.sort(key=lambda x: x['total_hours'], reverse=True)
+        
+        # Weekly breakdown
+        weekly_stats = defaultdict(lambda: {
+            'jobs': 0,
+            'work_hours': 0,
+            'urgent': 0,
+            'monthly': 0,
+            'annual': 0,
+            'other': 0
+        })
+        
+        for job in jobs:
+            due = date.fromisoformat(str(job['due_date']))
+            week_num = ((due - month_start).days // 7) + 1
+            if week_num > 4:
+                week_num = 4
+            
+            week_key = f"week_{week_num}"
+            weekly_stats[week_key]['jobs'] += 1
+            weekly_stats[week_key]['work_hours'] += float(job.get('est_hours', 2))
+            
+            # Categorize by priority
+            priority = job.get('jp_priority', '')
+            if priority in ['NOV', 'Urgent']:
+                weekly_stats[week_key]['urgent'] += 1
+            elif 'Monthly' in priority:
+                weekly_stats[week_key]['monthly'] += 1
+            elif 'Annual' in priority or 'Year' in priority:
+                weekly_stats[week_key]['annual'] += 1
+            else:
+                weekly_stats[week_key]['other'] += 1
+        
+        # Estimate drive time per week (proportional to job distribution)
+        weekly_breakdown = []
+        for i in range(1, 5):
+            week_key = f"week_{i}"
+            week_data = weekly_stats[week_key]
+            
+            # Proportional drive time based on job percentage
+            week_job_percent = week_data['jobs'] / len(jobs) if len(jobs) > 0 else 0
+            week_drive_hours = total_drive_hours * week_job_percent
+            
+            # Calculate week date range
+            week_start = month_start + timedelta(days=(i-1)*7)
+            week_end = min(week_start + timedelta(days=6), month_end - timedelta(days=1))
+            
+            weekly_breakdown.append({
+                'week': i,
+                'date_range': f"{week_start.strftime('%b %d')} - {week_end.strftime('%b %d')}",
+                'jobs': week_data['jobs'],
+                'work_hours': round(week_data['work_hours'], 1),
+                'drive_hours': round(week_drive_hours, 1),
+                'total_hours': round(week_data['work_hours'] + week_drive_hours, 1),
+                'urgent': week_data['urgent'],
+                'monthly': week_data['monthly'],
+                'annual': week_data['annual'],
+                'other': week_data['other']
+            })
+        
+        # Find problem jobs
+        problem_jobs = {"remote_locations": [], "limited_eligibility": []}
+        
+        REMOTE_THRESHOLD = 300  # miles
+        
+        for job in jobs:
+            # Check eligibility
+            elig = sb_select("job_technician_eligibility", filters=[
+                ("work_order", "eq", job["work_order"])
+            ])
+            
+            if len(elig) <= 2:
+                problem_jobs["limited_eligibility"].append({
+                    "work_order": job["work_order"],
+                    "site_name": job.get("site_name"),
+                    "region": job.get("region", "Unknown"),
+                    "est_hours": job.get("est_hours", 2),
+                    "eligible_techs": len(elig),
+                    "tech_names": [e.get("technician_name", "Unknown") for e in elig]
+                })
+            
+            # Check if remote (>150 miles from any tech)
+            if job.get('latitude') and job.get('longitude'):
+                min_distance = 999999
+                closest_tech = None
+                
+                for tech in techs:
+                    if tech.get('home_latitude') and tech.get('home_longitude'):
+                        dist = haversine(
+                            tech['home_latitude'], tech['home_longitude'],
+                            job['latitude'], job['longitude']
+                        )
+                        if dist < min_distance:
+                            min_distance = dist
+                            closest_tech = tech['name']
+                
+                if min_distance > REMOTE_THRESHOLD:
+                    problem_jobs["remote_locations"].append({
+                        "work_order": job["work_order"],
+                        "site_name": job.get("site_name"),
+                        "region": job.get("region", "Unknown"),
+                        "est_hours": job.get("est_hours", 2),
+                        "distance_from_nearest": round(min_distance, 1),
+                        "nearest_tech": closest_tech
+                    })
+        
+        # Calculate tech capacity
+        weeks_in_month = 4
+        tech_capacity = sum(float(t.get("max_weekly_hours", 40)) * weeks_in_month for t in techs)
+        total_hours = total_work_hours + total_drive_hours
+        utilization = (total_hours / tech_capacity * 100) if tech_capacity > 0 else 0
+        
+        return {
+            "summary": {
+                "total_jobs": len(jobs),
+                "total_work_hours": round(total_work_hours, 1),
+                "total_drive_hours": round(total_drive_hours, 1),
+                "total_hours": round(total_hours, 1),
+                "tech_count": len(techs),
+                "total_tech_capacity": round(tech_capacity, 1),
+                "utilization_percent": round(utilization, 1),
+                "is_manageable": utilization <= 90,
+                "remote_jobs_count": len(problem_jobs["remote_locations"]),
+                "limited_eligibility_count": len(problem_jobs["limited_eligibility"])
+            },
+            "regional_breakdown": regional_breakdown,
+            "weekly_breakdown": weekly_breakdown,
+            "problem_jobs": problem_jobs
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {
+            "error": str(e),
+            "summary": {
+                "total_jobs": 0,
+                "total_work_hours": 0,
+                "total_drive_hours": 0,
+                "total_hours": 0,
+                "tech_count": 0,
+                "total_tech_capacity": 0,
+                "utilization_percent": 0
+            },
+            "regional_breakdown": [],
+            "weekly_breakdown": [],
+            "problem_jobs": {"remote_locations": [], "limited_eligibility": []}
+        }
 # ============================================================================
 # RUN
 # ============================================================================

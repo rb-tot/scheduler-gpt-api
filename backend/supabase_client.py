@@ -47,6 +47,10 @@ def sb_select(table: str, *, filters: Optional[List[Tuple[str, str, Any]]] = Non
                 q = q.lte(col, val)
             elif op == "in":
                 q = q.in_(col, val)
+            elif op == "gt":           # ADD THIS LINE
+                q = q.gt(col, val)     # ADD THIS LINE
+            elif op == "lt":           # ADD THIS LINE
+                q = q.lt(col, val)  
             else:
                 raise ValueError(f"Unsupported op {op}")
         if limit:
