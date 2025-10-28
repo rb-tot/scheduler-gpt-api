@@ -112,7 +112,8 @@ def health():
 def get_unscheduled_jobs(
     region: Optional[str] = Query(None),
     priority: Optional[str] = Query(None),
-    limit: int = Query(500, le=1000)
+    limit: int = Query(500, le=1000),
+    weeks_ahead: int = Query(4)
 ):
     """Get all unscheduled jobs with eligibility info"""
     
@@ -784,6 +785,43 @@ def bulk_assign_jobs(req: BulkAssignRequest):
                     results["details"].append(f"✗ WO {job['work_order']}: {str(e)}")
     
     return results
+
+@app.get("/api/regions/list")
+def get_regions_list():
+   
+    try:
+        regions = sb_select("regions")
+        return [{"region_name": r.get("region_name")} for r in regions]
+    except Exception as e:
+        raise HTTPException(500, f"Failed to load regions: {str(e)}")
+
+
+@app.get("/api/schedule/week-all") 
+def get_full_week_schedule(
+    week_start: str
+):
+      
+    try:
+        start_date = datetime.fromisoformat(week_start).date()
+        end_date = start_date + timedelta(days=4)
+        
+        scheduled_jobs = sb_select("scheduled_jobs", filters=[
+            ("date", "gte", str(start_date)),
+            ("date", "lte", str(end_date))
+        ])
+        
+        for job in scheduled_jobs:
+            if 'drive_time' not in job:
+                job['drive_time'] = 0.5
+        
+        return {
+            "week_start": str(start_date),
+            "scheduled_jobs": scheduled_jobs,
+            "total_jobs": len(scheduled_jobs)
+        }
+    except Exception as e:
+        raise HTTPException(500, f"Failed to load week: {str(e)}")
+
 
 @app.get("/api/analysis/monthly")
 def monthly_analysis(year: int, month: int):

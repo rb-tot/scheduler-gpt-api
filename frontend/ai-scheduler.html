@@ -638,8 +638,9 @@
             }
         }
         async function saveScheduleToDatabase() {
-            if (!window.currentSchedule) {
-                alert('No schedule to save');
+            // Check if we have a schedule with the correct structure
+            if (!window.currentSchedule || !window.currentSchedule.tech_schedules || window.currentSchedule.tech_schedules.length === 0) {
+                alert('Please generate a schedule first before saving!');
                 return;
             }
             
@@ -647,48 +648,51 @@
             statusDiv.innerHTML = '<div style="color: #666;">💾 Saving...</div>';
             
             try {
+                // Extract the first tech's schedule (since you're doing single tech for now)
+                const techSchedule = window.currentSchedule.tech_schedules[0];
+                
+                // Create the data in the format the backend expects
+                const saveData = {
+                    tech_schedule: techSchedule,
+                    week_start: techSchedule.week_start
+                };
+                
                 const response = await fetch('/api/schedule/save', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'X-API-Key': API_KEY
                     },
-                    body: JSON.stringify(window.currentSchedule)
+                    body: JSON.stringify(saveData)
                 });
                 
                 if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `HTTP ${response.status}`);
                 }
                 
                 const result = await response.json();
                 
                 if (result.success) {
-                    statusDiv.innerHTML = `
-                        <div style="color: #10b981; padding: 15px; background: #d1fae5; border-radius: 6px; border-left: 4px solid #10b981;">
-                            <strong>✅ Schedule Saved Successfully!</strong><br>
-                            ${result.jobs_saved} jobs saved for ${result.tech_name}<br>
-                            Week starting ${result.week_start}
-                        </div>
-                    `;
+                    statusDiv.innerHTML = `<div style="color: #10b981;">✅ Schedule saved! ${result.jobs_saved} jobs scheduled.</div>`;
                     
-                    // Disable the save button to prevent double-saving
-                    event.target.disabled = true;
-                    event.target.textContent = '✅ Saved';
-                    event.target.style.background = '#6b7280';
+                    // Clear the current schedule after successful save
+                    window.currentSchedule = null;
+                    
+                    // Optional: Refresh or show success message
+                    setTimeout(() => {
+                        statusDiv.innerHTML = '';
+                    }, 5000);
                 } else {
-                    throw new Error(result.error || 'Failed to save');
+                    statusDiv.innerHTML = `<div style="color: #ef4444;">❌ Error: ${result.error}</div>`;
                 }
                 
             } catch (error) {
-                console.error('Error saving schedule:', error);
-                statusDiv.innerHTML = `
-                    <div style="color: #dc2626; padding: 15px; background: #fee2e2; border-radius: 6px; border-left: 4px solid #dc2626;">
-                        <strong>❌ Failed to Save</strong><br>
-                        ${error.message}
-                    </div>
-                `;
+                console.error('Save error:', error);
+                statusDiv.innerHTML = `<div style="color: #ef4444;">❌ Error: ${error.message}</div>`;
             }
         }
+        
         // ============================================================================
         // DISPLAY RESULTS
         // ============================================================================
@@ -696,6 +700,8 @@
         function displayScheduleResults(data) {
             const resultsDiv = document.getElementById('schedule-results');
             
+            window.currentSchedule = data;
+
             if (!data.success || !data.tech_schedules || data.tech_schedules.length === 0) {
                 resultsDiv.innerHTML = `
                     <div style="padding: 20px; background: #fef3c7; border-radius: 8px;">

@@ -1,0 +1,1491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="stylesheet" href="/static/style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Schedule Dashboard - SchedulerGPT</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f3f4f6;
+            color: #1f2937;
+        }
+        
+        /* HEADER */
+        .header {
+            background: #4f46e5;
+            color: white;
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header-controls {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .week-selector {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(255,255,255,0.1);
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+        }
+        
+        .btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+        
+        .btn-primary {
+            background: #10b981;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #059669;
+        }
+        
+        .btn-secondary {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.3);
+        }
+        
+        .btn-secondary:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+        
+        .btn[disabled] {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        /* LAYOUT */
+        .main-container {
+            display: flex;
+            height: calc(100vh - 120px);
+            overflow: hidden;
+        }
+        
+        .calendar-panel {
+            flex: 1;
+            background: white;
+            margin: 1rem;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            overflow: auto;
+            position: relative;
+        }
+        
+        .side-panel {
+            width: 320px;
+            background: white;
+            margin: 1rem 1rem 1rem 0;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .side-panel-header {
+            padding: 1rem;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        
+        .side-panel-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+        }
+        
+        /* CALENDAR GRID */
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: 150px repeat(5, 1fr);
+            min-width: 900px;
+            height: 100%;
+        }
+        
+        .calendar-header {
+            background: #f9fafb;
+            padding: 1rem;
+            text-align: center;
+            font-weight: 600;
+            border-bottom: 2px solid #e5e7eb;
+            border-right: 1px solid #e5e7eb;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        
+        .calendar-header.tech-header {
+            text-align: left;
+            background: #4f46e5;
+            color: white;
+        }
+        
+        .tech-cell {
+            background: #f9fafb;
+            padding: 1rem;
+            border-right: 2px solid #e5e7eb;
+            border-bottom: 1px solid #e5e7eb;
+            position: sticky;
+            left: 0;
+            z-index: 5;
+        }
+        
+        .tech-name {
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+        
+        .tech-status {
+            font-size: 0.75rem;
+            color: #6b7280;
+        }
+        
+        .day-cell {
+            border-right: 1px solid #e5e7eb;
+            border-bottom: 1px solid #e5e7eb;
+            padding: 0.5rem;
+            min-height: 120px;
+            position: relative;
+            transition: background-color 0.2s;
+        }
+        
+        .day-cell.drop-active {
+            background: #dbeafe;
+            border: 2px dashed #3b82f6;
+        }
+        
+        .day-cell.drop-invalid {
+            background: #fee2e2;
+            border: 2px dashed #ef4444;
+        }
+        
+        .day-cell.tech-unavailable {
+            background: #f3f4f6;
+            position: relative;
+        }
+        
+        .day-cell.tech-unavailable::after {
+            content: attr(data-reason);
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #9ca3af;
+            font-style: italic;
+        }
+        
+        .day-summary {
+            font-size: 0.75rem;
+            color: #6b7280;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+        
+        .day-summary.over-capacity {
+            color: #dc2626;
+            font-weight: 600;
+        }
+        
+        /* JOB CARDS */
+        .job-card {
+            background: #f3f4f6;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            padding: 0.5rem;
+            margin-bottom: 0.5rem;
+            cursor: grab;
+            transition: all 0.2s;
+            font-size: 0.875rem;
+        }
+        
+        .job-card:hover {
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            transform: translateY(-1px);
+        }
+        
+        .job-card.dragging {
+            opacity: 0.5;
+            cursor: grabbing;
+        }
+        
+        .job-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.25rem;
+        }
+        
+        .job-wo {
+            font-weight: 600;
+            color: #1f2937;
+        }
+        
+        .job-priority {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        
+        .priority-urgent { background: #dc2626; }
+        .priority-high { background: #f59e0b; }
+        .priority-normal { background: #10b981; }
+        
+        .job-location {
+            color: #4b5563;
+            font-size: 0.75rem;
+        }
+        
+        .job-details {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: #6b7280;
+            margin-top: 0.25rem;
+        }
+        
+        .job-icons {
+            display: flex;
+            gap: 0.25rem;
+        }
+        
+        /* UNSCHEDULED JOBS */
+        .unscheduled-job {
+            background: white;
+            border: 2px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 0.75rem;
+            margin-bottom: 0.75rem;
+            cursor: grab;
+            transition: all 0.2s;
+        }
+        
+        .unscheduled-job:hover {
+            border-color: #3b82f6;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .unscheduled-job.dragging {
+            opacity: 0.5;
+        }
+        
+        .job-due-date {
+            font-size: 0.75rem;
+            margin-top: 0.25rem;
+        }
+        
+        .due-urgent { color: #dc2626; }
+        .due-soon { color: #f59e0b; }
+        .due-normal { color: #6b7280; }
+        
+        /* FILTERS */
+        .filter-section {
+            padding: 0.75rem;
+            background: #f9fafb;
+            border-radius: 6px;
+            margin-bottom: 1rem;
+        }
+        
+        .filter-group {
+            margin-bottom: 0.5rem;
+        }
+        
+        .filter-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: #4b5563;
+            margin-bottom: 0.25rem;
+        }
+        
+        select, input {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            font-size: 0.875rem;
+        }
+        
+        /* STATUS BAR */
+        .status-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #1f2937;
+            color: white;
+            padding: 0.75rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.875rem;
+        }
+        
+        .status-message {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .unsaved-indicator {
+            background: #f59e0b;
+            color: #1f2937;
+            padding: 0.25rem 0.75rem;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        
+        /* MODALS */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal.active {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: white;
+            padding: 2rem;
+            border-radius: 12px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        
+        .modal-header {
+            margin-bottom: 1.5rem;
+        }
+        
+        .modal-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+        
+        /* WEEK COMPARISON */
+        .comparison-toggle {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        
+        .comparison-panel {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            padding: 1rem;
+            display: none;
+            z-index: 100;
+        }
+        
+        .comparison-panel.active {
+            display: block;
+        }
+        
+        /* LOADING */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #6b7280;
+        }
+        
+        .spinner {
+            border: 3px solid #f3f4f6;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin-right: 1rem;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <!-- HEADER -->
+    <div class="header">
+        <h1>📊 Schedule Command Center</h1>
+        <div class="header-controls">
+            <div class="week-selector">
+                <button class="btn btn-secondary" onclick="changeWeek(-1)">←</button>
+                <input type="week" id="week-input" onchange="loadWeekData()">
+                <button class="btn btn-secondary" onclick="changeWeek(1)">→</button>
+                <span id="week-display"></span>
+            </div>
+            
+            <button class="btn btn-secondary" id="whatif-btn" onclick="toggleWhatIfMode()">
+                🔬 What-If Mode: OFF
+            </button>
+            
+            <button class="btn btn-secondary" onclick="showComparisonPanel()">
+                📊 Compare Weeks
+            </button>
+            
+            <button class="btn btn-primary" id="save-btn" onclick="saveChanges()" disabled>
+                💾 Save Changes
+            </button>
+            
+            <button class="btn btn-secondary" id="undo-btn" onclick="undoChange()" disabled>
+                ↶ Undo
+            </button>
+            
+            <button class="btn btn-secondary" id="redo-btn" onclick="redoChange()" disabled>
+                ↷ Redo
+            </button>
+        </div>
+    </div>
+    
+    <!-- MAIN CONTAINER -->
+    <div class="main-container">
+        <!-- CALENDAR PANEL -->
+        <div class="calendar-panel" id="calendar-panel">
+            <div class="loading">
+                <div class="spinner"></div>
+                Loading schedule...
+            </div>
+        </div>
+        
+        <!-- SIDE PANEL - UNSCHEDULED JOBS -->
+        <div class="side-panel">
+            <div class="side-panel-header">
+                <h3>📋 Unscheduled Jobs</h3>
+                <div class="filter-section">
+                    <div class="filter-group">
+                        <div class="filter-label">Region</div>
+                        <select id="region-filter" onchange="filterUnscheduledJobs()">
+                            <option value="">All Regions</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <div class="filter-label">Priority</div>
+                        <select id="priority-filter" onchange="filterUnscheduledJobs()">
+                            <option value="">All Priorities</option>
+                            <option value="urgent">Urgent (Overdue)</option>
+                            <option value="high">High (This Week)</option>
+                            <option value="normal">Normal</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="side-panel-content" id="unscheduled-jobs">
+                <!-- Unscheduled jobs will be loaded here -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- STATUS BAR -->
+    <div class="status-bar">
+        <div class="status-message">
+            <span id="status-text">Ready</span>
+            <span id="unsaved-indicator" class="unsaved-indicator" style="display: none;">Unsaved Changes</span>
+        </div>
+        <div id="status-stats">
+            <!-- Stats will be updated here -->
+        </div>
+    </div>
+    
+    <!-- MODALS -->
+    <!-- Tech Availability Modal -->
+    <div class="modal" id="availability-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Set Tech Availability</h2>
+            </div>
+            <div id="availability-form">
+                <!-- Form will be populated dynamically -->
+            </div>
+            <div style="margin-top: 1rem; display: flex; gap: 0.5rem; justify-content: flex-end;">
+                <button class="btn btn-secondary" onclick="closeModal('availability-modal')">Cancel</button>
+                <button class="btn btn-primary" onclick="saveAvailability()">Save</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Week Comparison Modal -->
+    <div class="modal" id="comparison-modal">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h2 class="modal-title">Week Comparison</h2>
+            </div>
+            <div id="comparison-content">
+                <!-- Comparison data will be loaded here -->
+            </div>
+            <div style="margin-top: 1rem; text-align: right;">
+                <button class="btn btn-secondary" onclick="closeModal('comparison-modal')">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================================
+        // GLOBAL STATE
+        // ============================================================================
+        
+        const API_KEY = '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';
+        
+        let currentWeekData = null;
+        let unscheduledJobs = [];
+        let technicians = [];
+        let regions = [];
+        let whatIfMode = false;
+        let hasUnsavedChanges = false;
+        let undoStack = [];
+        let redoStack = [];
+        let draggedJob = null;
+        let techAvailability = {};
+        
+        // ============================================================================
+        // INITIALIZATION
+        // ============================================================================
+        
+        document.addEventListener('DOMContentLoaded', async() => {
+            
+            await loadTechnicians();
+            await loadRegions();
+            initializeWeek();
+            setupDragDropHandlers();
+        });
+        
+        function initializeWeek() {
+            const weekInput = document.getElementById('week-input');
+            const today = new Date();
+            const monday = new Date(today.setDate(today.getDate() - today.getDay() + 1));
+            const year = monday.getFullYear();
+            const week = getWeekNumber(monday);
+            weekInput.value = `${year}-W${week.toString().padStart(2, '0')}`;
+            updateWeekDisplay();
+            loadWeekData();
+        }
+        
+        function getWeekNumber(date) {
+            const firstJan = new Date(date.getFullYear(), 0, 1);
+            const days = Math.floor((date - firstJan) / (24 * 60 * 60 * 1000));
+            return Math.ceil((days + firstJan.getDay() + 1) / 7);
+        }
+        
+        // ============================================================================
+        // DATA LOADING
+        // ============================================================================
+        
+        async function loadTechnicians() {
+            try {
+                const response = await fetch('/api/technicians/all', {
+                    headers: { 'X-API-Key': API_KEY }
+                });
+                const data = await response.json();
+                technicians = data.technicians || [];  // <-- THE FIX!
+                
+                console.log(`Loaded ${technicians.length} technicians`); // Debug message
+            } catch (error) {
+                console.error('Error loading technicians:', error);
+                showStatus('Failed to load technicians', 'error');
+                technicians = [];  // Set empty array on error
+            }
+        }
+        
+        async function loadRegions() {
+            try {
+                const response = await fetch('/api/regions/list', {
+                    headers: { 'X-API-Key': API_KEY }
+                });
+                const data = await response.json();
+                regions = data || [];
+                
+                // Populate region filter
+                const regionFilter = document.getElementById('region-filter');
+                regionFilter.innerHTML = '<option value="">All Regions</option>';
+                regions.forEach(region => {
+                    regionFilter.innerHTML += `<option value="${region.region_name}">${region.region_name}</option>`;
+                });
+            } catch (error) {
+                console.error('Error loading regions:', error);
+            }
+        }
+        
+        async function loadWeekData() {
+            const weekInput = document.getElementById('week-input').value;
+            if (!weekInput) return;
+            
+            // Make sure technicians are loaded
+            if (!technicians || technicians.length === 0) {
+                console.log('Waiting for technicians to load...');
+                return;
+            }
+            
+            const [year, weekStr] = weekInput.split('-W');
+            const weekNum = parseInt(weekStr);
+            const weekStart = getDateFromWeek(year, weekNum);
+            
+            showStatus('Loading schedule...');
+            
+            try {
+                // Use the NEW week-all endpoint!
+                const scheduleResponse = await fetch(`/api/schedule/week-all?week_start=${weekStart}`, {
+                    headers: { 'X-API-Key': API_KEY }
+                });
+                currentWeekData = await scheduleResponse.json();
+
+                  // ADD THESE DEBUG LINES:
+                console.log('Week data loaded:', currentWeekData);
+                console.log('Scheduled jobs count:', currentWeekData.scheduled_jobs?.length || 0);
+                // ADD ALL THIS DEBUGGING:
+                console.log('=== DEBUGGING WEEK DATA ===');
+                console.log('Full response:', currentWeekData);
+                console.log('Scheduled jobs array:', currentWeekData.scheduled_jobs);
+                console.log('Number of jobs:', currentWeekData.scheduled_jobs?.length || 0);
+
+                // Check if we have jobs
+                if (currentWeekData.scheduled_jobs && currentWeekData.scheduled_jobs.length > 0) {
+                    console.log('First job example:', currentWeekData.scheduled_jobs[0]);
+                    console.log('Tech ID in job:', currentWeekData.scheduled_jobs[0].technician_id);
+                }
+
+                // Check our technicians
+                console.log('Loaded technicians:', technicians);
+                console.log('First tech ID:', technicians[0]?.technician_id || technicians[0]?.id);
+
+                // Load unscheduled jobs
+                const unscheduledResponse = await fetch('/api/jobs/unscheduled', {
+                    headers: { 'X-API-Key': API_KEY }
+                });
+                const unscheduledData = await unscheduledResponse.json();
+
+                // Extract jobs array from response (your endpoint returns {count: X, jobs: [...]})
+                unscheduledJobs = unscheduledData.jobs || unscheduledData || [];
+                
+                renderCalendar();
+                renderUnscheduledJobs();
+                updateStats();
+                showStatus('Schedule loaded');
+                
+            } catch (error) {
+                console.error('Error loading week data:', error);
+                showStatus('Failed to load schedule', 'error');
+            }
+        }
+        
+        function getDateFromWeek(year, week) {
+            const jan4 = new Date(year, 0, 4);
+            const weekOne = new Date(jan4.setDate(jan4.getDate() - jan4.getDay() + 1));
+            return new Date(weekOne.setDate(weekOne.getDate() + (week - 1) * 7)).toISOString().split('T')[0];
+        }
+        
+        // ============================================================================
+        // RENDERING
+        // ============================================================================
+        
+        function renderCalendar() {
+            const panel = document.getElementById('calendar-panel');
+            
+            // Create calendar structure
+            let html = '<div class="calendar-grid">';
+            
+            // Header row
+            html += '<div class="calendar-header tech-header">Technician</div>';
+            const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+            const dates = getWeekDates();
+            
+            days.forEach((day, index) => {
+                html += `
+                    <div class="calendar-header">
+                        ${day}<br>
+                        <span style="font-size: 0.875rem; font-weight: normal;">${dates[index]}</span>
+                    </div>
+                `;
+            });
+            
+            // Tech rows
+            technicians.forEach(tech => {
+                if (!tech.active) return;
+                
+                html += `
+                    <div class="tech-cell">
+                        <div class="tech-name">${tech.name}</div>
+                        <div class="tech-status" id="tech-status-${tech.technician_id || tech.id}">Active</div>
+                        <button class="btn btn-secondary" style="margin-top: 0.5rem; font-size: 0.75rem;" 
+                                onclick="editTechAvailability(${tech.id})">
+                            ⚙️ Set Availability
+                        </button>
+                    </div>
+                `;
+                
+                // Day cells
+                days.forEach((day, dayIndex) => {
+                    const dateStr = dates[dayIndex];
+                    const dayLower = day.toLowerCase();
+                    const isAvailable = checkTechAvailability(tech.id, dateStr);
+                    
+                    if (!isAvailable) {
+                        html += `
+                            <div class="day-cell tech-unavailable" 
+                                 data-tech="${tech.technician_id || tech.id}" 
+                                 data-day="${dayLower}"
+                                 data-date="${dateStr}"
+                                 data-reason="${getTechUnavailableReason(tech.id, dateStr)}">
+                            </div>
+                        `;
+                    } else {
+                        html += `
+                            <div class="day-cell" 
+                                 data-tech="${tech.id}" 
+                                 data-day="${dayLower}"
+                                 data-date="${dateStr}"
+                                 ondrop="handleDrop(event)"
+                                 ondragover="handleDragOver(event)"
+                                 ondragleave="handleDragLeave(event)">
+                                <div class="day-summary" id="summary-${tech.technician_id || tech.id}-${dayLower}">
+                                    0h work + 0h drive
+                                </div>
+                                <div class="day-jobs" id="jobs-${tech.technician_id || tech.id}-${dayLower}">
+                                    <!-- Jobs will be rendered here -->
+                                </div>
+                            </div>
+                        `;
+                    }
+                });
+            });
+            
+            html += '</div>';
+            panel.innerHTML = html;
+            
+            // Render jobs in cells
+            renderScheduledJobs();
+            const gridElement = document.querySelector('.calendar-grid');
+            if (gridElement) {
+                gridElement.style.display = 'grid';
+                gridElement.style.gridTemplateColumns = '150px repeat(5, 1fr)';
+            }
+        }
+        
+        function renderScheduledJobs() {
+            if (!currentWeekData || !currentWeekData.scheduled_jobs) return;
+            
+            // Clear all job cells first
+            document.querySelectorAll('.day-jobs').forEach(cell => {
+                cell.innerHTML = '';
+            });
+            
+            // Group jobs by tech and day
+            const jobsByTechDay = {};
+            
+            currentWeekData.scheduled_jobs.forEach(job => {
+                const techId = job.technician_id;
+                const date = new Date(job.date);
+                const dayName = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][date.getDay()];
+                
+                const key = `${techId}-${dayName}`;
+                if (!jobsByTechDay[key]) {
+                    jobsByTechDay[key] = [];
+                }
+                jobsByTechDay[key].push(job);
+            });
+            
+            // Render jobs and calculate totals
+            Object.entries(jobsByTechDay).forEach(([key, jobs]) => {
+                const [techId, day] = key.split('-');
+                const container = document.getElementById(`jobs-${techId}-${day}`);
+                const summaryEl = document.getElementById(`summary-${techId}-${day}`);
+                
+                if (!container) return;
+                
+                let totalWork = 0;
+                let totalDrive = 0;
+                
+                // Clear container first
+                container.innerHTML = '';
+
+                // Build all HTML at once
+                let jobsHTML = '';
+                jobs.forEach(job => {
+                    totalWork += job.duration || 0;
+                    totalDrive += job.drive_time || 0;
+                    
+                    const priority = getJobPriority(job.due_date);
+                    jobsHTML += createJobCard(job, priority);
+                });
+
+                // Set all HTML at once
+                container.innerHTML = jobsHTML;
+                
+                // Update summary
+                summaryEl.textContent = `${totalWork}h work + ${totalDrive}h drive`;
+                if (totalWork + totalDrive > 10) {
+                    summaryEl.classList.add('over-capacity');
+                } else {
+                    summaryEl.classList.remove('over-capacity');
+                }
+            });
+        }
+        
+        function createJobCard(job, priority = 'normal') {
+            const icons = [];
+            if (job.is_night_job) icons.push('🌙');
+            
+            return `
+                <div class="job-card" 
+                     draggable="true"
+                     data-job='${JSON.stringify(job)}'
+                     ondragstart="handleDragStart(event)">
+                    <div class="job-card-header">
+                        <span class="job-wo">WO ${job.work_order}</span>
+                        <span class="job-priority priority-${priority}"></span>
+                    </div>
+                    <div class="job-location">${job.site_city || 'Unknown'}, ${job.site_state || ''}</div>
+                    <div class="job-details">
+                        <span>${job.sow_1 || ''} • ${job.duration || 0}h</span>
+                        <span class="job-icons">${icons.join(' ')}</span>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function renderUnscheduledJobs() {
+            const container = document.getElementById('unscheduled-jobs');
+            const filtered = filterJobs(unscheduledJobs);
+            
+            if (filtered.length === 0) {
+                container.innerHTML = '<div style="text-align: center; color: #9ca3af; padding: 2rem;">No unscheduled jobs</div>';
+                return;
+            }
+            
+            container.innerHTML = filtered.map(job => {
+                const priority = getJobPriority(job.due_date);
+                const dueClass = priority === 'urgent' ? 'due-urgent' : 
+                               priority === 'high' ? 'due-soon' : 'due-normal';
+                
+                return `
+                    <div class="unscheduled-job" 
+                         draggable="true"
+                         data-job='${JSON.stringify(job)}'
+                         ondragstart="handleDragStart(event)">
+                        <div class="job-card-header">
+                            <span class="job-wo">WO ${job.work_order}</span>
+                            <span class="job-priority priority-${priority}"></span>
+                        </div>
+                        <div class="job-location">${job.site_city || 'Unknown'}, ${job.site_state || ''}</div>
+                        <div class="job-details">
+                            <span>${job.region || ''}</span>
+                            <span>${job.est_hours || 0}h</span>
+                        </div>
+                        <div class="job-due-date ${dueClass}">
+                            Due: ${formatDate(job.due_date)}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        // ============================================================================
+        // DRAG & DROP
+        // ============================================================================
+        
+        function setupDragDropHandlers() {
+            // Prevent default drag behaviors
+            document.addEventListener('dragover', (e) => e.preventDefault());
+            document.addEventListener('drop', (e) => e.preventDefault());
+        }
+        
+        function handleDragStart(event) {
+            const jobData = JSON.parse(event.target.getAttribute('data-job'));
+            draggedJob = jobData;
+            event.target.classList.add('dragging');
+            event.dataTransfer.effectAllowed = 'move';
+        }
+        
+        function handleDragOver(event) {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+            
+            const cell = event.currentTarget;
+            if (!cell.classList.contains('tech-unavailable')) {
+                // Check if drop would be valid
+                const techId = parseInt(cell.getAttribute('data-tech'));
+                const date = cell.getAttribute('data-date');
+                
+                if (wouldExceedCapacity(techId, date, draggedJob)) {
+                    cell.classList.add('drop-invalid');
+                    cell.classList.remove('drop-active');
+                } else {
+                    cell.classList.add('drop-active');
+                    cell.classList.remove('drop-invalid');
+                }
+            }
+        }
+        
+        function handleDragLeave(event) {
+            event.currentTarget.classList.remove('drop-active', 'drop-invalid');
+        }
+        
+        async function handleDrop(event) {
+            event.preventDefault();
+            const cell = event.currentTarget;
+            cell.classList.remove('drop-active', 'drop-invalid');
+            
+            if (!draggedJob || cell.classList.contains('tech-unavailable')) return;
+            
+            const techId = parseInt(cell.getAttribute('data-tech'));
+            const date = cell.getAttribute('data-date');
+            
+            // Check capacity
+            if (wouldExceedCapacity(techId, date, draggedJob)) {
+                showStatus('Cannot add - would exceed daily capacity', 'error');
+                return;
+            }
+            
+            // Remove dragging class
+            document.querySelectorAll('.dragging').forEach(el => {
+                el.classList.remove('dragging');
+            });
+            
+            // If in What-If mode, just update UI
+            if (whatIfMode) {
+                addJobToSchedule(draggedJob, techId, date);
+                markUnsavedChanges();
+            } else {
+                // Save to database
+                await assignJob(draggedJob, techId, date);
+            }
+            
+            draggedJob = null;
+        }
+        
+        // ============================================================================
+        // JOB MANAGEMENT
+        // ============================================================================
+        
+        async function assignJob(job, techId, date) {
+            showStatus('Assigning job...');
+            
+            try {
+                const response = await fetch('/api/schedule/assign', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-Key': API_KEY
+                    },
+                    body: JSON.stringify({
+                        work_order: job.work_order,
+                        technician_id: techId,
+                        date: date,
+                        
+                    })
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.errors ? error.errors[0] : 'Failed to assign job');
+                }
+                
+                const result = await response.json();
+                
+                // Reload the week to get updated data
+                await loadWeekData();
+                
+                showStatus(`Job ${job.work_order} assigned successfully`);
+                
+                // Add to undo stack
+                addToUndoStack({
+                    action: 'assign',
+                    job: job,
+                    techId: techId,
+                    date: date
+                });
+                
+            } catch (error) {
+                console.error('Error assigning job:', error);
+                showStatus('Failed to assign job', 'error');
+            }
+        }
+        
+        async function unassignJob(workOrder) {
+            try {
+                const response = await fetch(`/api/schedule/remove/${workOrder}`, {
+                    method: 'DELETE',
+                    headers: { 'X-API-Key': API_KEY }
+                });
+                
+                if (!response.ok) throw new Error('Failed to unassign job');
+                
+                await loadWeekData();
+                showStatus(`Job ${workOrder} removed from schedule`);
+                
+            } catch (error) {
+                console.error('Error unassigning job:', error);
+                showStatus('Failed to remove job', 'error');
+            }
+        }
+        
+        function calculateDriveTime(techId, date, job) {
+            // Simplified calculation - would use actual routing in production
+            // For now, assume 30 miles average between jobs at 55mph
+            const MILES_BETWEEN_JOBS = 30;
+            const AVG_SPEED = 55;
+            
+            return Math.round((MILES_BETWEEN_JOBS / AVG_SPEED) * 10) / 10; // Round to 0.1 hours
+        }
+        
+        function wouldExceedCapacity(techId, date, job) {
+            const dayEl = document.querySelector(`[data-tech="${techId}"][data-date="${date}"] .day-summary`);
+            if (!dayEl) return false;
+            
+            const currentText = dayEl.textContent;
+            const match = currentText.match(/(\d+(?:\.\d+)?)h work \+ (\d+(?:\.\d+)?)h drive/);
+            
+            if (match) {
+                const currentWork = parseFloat(match[1]);
+                const currentDrive = parseFloat(match[2]);
+                const newTotal = currentWork + currentDrive + (job.duration || job.est_hours || 0) + 0.5; // +0.5h estimated drive
+                return newTotal > 10;
+            }
+            
+            return false;
+        }
+        
+        // ============================================================================
+        // WHAT-IF MODE
+        // ============================================================================
+        
+        function toggleWhatIfMode() {
+            whatIfMode = !whatIfMode;
+            const btn = document.getElementById('whatif-btn');
+            btn.textContent = whatIfMode ? '🔬 What-If Mode: ON' : '🔬 What-If Mode: OFF';
+            btn.style.background = whatIfMode ? '#10b981' : 'rgba(255,255,255,0.2)';
+            
+            if (!whatIfMode && hasUnsavedChanges) {
+                if (confirm('You have unsaved changes. Do you want to save them?')) {
+                    saveChanges();
+                } else {
+                    // Reload to discard changes
+                    loadWeekData();
+                    hasUnsavedChanges = false;
+                    updateUnsavedIndicator();
+                }
+            }
+        }
+        
+        function addJobToSchedule(job, techId, date) {
+            // This would update the UI without saving to database
+            // Implementation depends on your specific needs
+            console.log('Adding job to schedule (What-If mode):', job, techId, date);
+            
+            // For now, just reload with the change
+            // In production, you'd update the UI state directly
+        }
+        
+        // ============================================================================
+        // UNDO/REDO
+        // ============================================================================
+        
+        function addToUndoStack(action) {
+            undoStack.push(action);
+            redoStack = []; // Clear redo stack on new action
+            updateUndoRedoButtons();
+        }
+        
+        async function undoChange() {
+            if (undoStack.length === 0) return;
+            
+            const action = undoStack.pop();
+            redoStack.push(action);
+            
+            // Perform the undo
+            if (action.action === 'assign') {
+                await unassignJob(action.job.work_order);
+            }
+            // Add more undo actions as needed
+            
+            updateUndoRedoButtons();
+        }
+        
+        async function redoChange() {
+            if (redoStack.length === 0) return;
+            
+            const action = redoStack.pop();
+            undoStack.push(action);
+            
+            // Perform the redo
+            if (action.action === 'assign') {
+                await assignJob(action.job, action.techId, action.date);
+            }
+            // Add more redo actions as needed
+            
+            updateUndoRedoButtons();
+        }
+        
+        function updateUndoRedoButtons() {
+            document.getElementById('undo-btn').disabled = undoStack.length === 0;
+            document.getElementById('redo-btn').disabled = redoStack.length === 0;
+        }
+        
+        // ============================================================================
+        // SAVE CHANGES
+        // ============================================================================
+        
+        function markUnsavedChanges() {
+            hasUnsavedChanges = true;
+            updateUnsavedIndicator();
+        }
+        
+        function updateUnsavedIndicator() {
+            document.getElementById('unsaved-indicator').style.display = 
+                hasUnsavedChanges ? 'inline-block' : 'none';
+            document.getElementById('save-btn').disabled = !hasUnsavedChanges;
+        }
+        
+        async function saveChanges() {
+            if (!hasUnsavedChanges) return;
+            
+            showStatus('Saving changes...');
+            
+            // In What-If mode, this would save all accumulated changes
+            // For now, changes are saved immediately
+            
+            hasUnsavedChanges = false;
+            updateUnsavedIndicator();
+            showStatus('Changes saved successfully');
+        }
+        
+        // ============================================================================
+        // TECH AVAILABILITY
+        // ============================================================================
+        
+        function editTechAvailability(techId) {
+            const tech = technicians.find(t => t.id === techId);
+            if (!tech) return;
+            
+            const modal = document.getElementById('availability-modal');
+            const form = document.getElementById('availability-form');
+            const dates = getWeekDates();
+            const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+            
+            let html = `<h3>${tech.name} - Week Availability</h3>`;
+            
+            days.forEach((day, index) => {
+                const dateStr = dates[index];
+                const availability = techAvailability[`${techId}-${dateStr}`] || { available: true };
+                
+                html += `
+                    <div style="margin-bottom: 1rem; padding: 0.5rem; background: #f9fafb; border-radius: 4px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <label style="font-weight: 500;">${day} (${dateStr})</label>
+                            <select id="avail-${techId}-${dateStr}" onchange="updateAvailabilityForm(${techId}, '${dateStr}')">
+                                <option value="available" ${availability.available ? 'selected' : ''}>Available</option>
+                                <option value="off" ${availability.type === 'off' ? 'selected' : ''}>Day Off</option>
+                                <option value="vacation" ${availability.type === 'vacation' ? 'selected' : ''}>Vacation</option>
+                                <option value="partial" ${availability.type === 'partial' ? 'selected' : ''}>Partial Day</option>
+                            </select>
+                        </div>
+                        <div id="partial-${techId}-${dateStr}" style="display: ${availability.type === 'partial' ? 'block' : 'none'}; margin-top: 0.5rem;">
+                            <label style="font-size: 0.875rem;">Available Hours:</label>
+                            <input type="number" id="hours-${techId}-${dateStr}" 
+                                   value="${availability.hours || 8}" min="1" max="10" step="0.5"
+                                   style="width: 80px; margin-left: 0.5rem;">
+                        </div>
+                    </div>
+                `;
+            });
+            
+            form.innerHTML = html;
+            modal.classList.add('active');
+        }
+        
+        function updateAvailabilityForm(techId, date) {
+            const select = document.getElementById(`avail-${techId}-${date}`);
+            const partialDiv = document.getElementById(`partial-${techId}-${date}`);
+            
+            partialDiv.style.display = select.value === 'partial' ? 'block' : 'none';
+        }
+        
+        function saveAvailability() {
+            const modal = document.getElementById('availability-modal');
+            const dates = getWeekDates();
+            
+            technicians.forEach(tech => {
+                dates.forEach(date => {
+                    const select = document.getElementById(`avail-${tech.id}-${date}`);
+                    if (select) {
+                        const value = select.value;
+                        const key = `${tech.id}-${date}`;
+                        
+                        if (value === 'available') {
+                            delete techAvailability[key];
+                        } else {
+                            techAvailability[key] = {
+                                available: false,
+                                type: value,
+                                hours: value === 'partial' ? 
+                                    parseFloat(document.getElementById(`hours-${tech.id}-${date}`).value) : 0
+                            };
+                        }
+                    }
+                });
+            });
+            
+            modal.classList.remove('active');
+            renderCalendar();
+            showStatus('Tech availability updated');
+        }
+        
+        function checkTechAvailability(techId, date) {
+            const key = `${techId}-${date}`;
+            const availability = techAvailability[key];
+            return !availability || availability.available !== false;
+        }
+        
+        function getTechUnavailableReason(techId, date) {
+            const key = `${techId}-${date}`;
+            const availability = techAvailability[key];
+            
+            if (!availability) return '';
+            
+            switch (availability.type) {
+                case 'off': return 'Day Off';
+                case 'vacation': return 'Vacation';
+                case 'partial': return `Partial (${availability.hours}h)`;
+                default: return 'Unavailable';
+            }
+        }
+        
+        // ============================================================================
+        // WEEK COMPARISON
+        // ============================================================================
+        
+        async function showComparisonPanel() {
+            const modal = document.getElementById('comparison-modal');
+            const content = document.getElementById('comparison-content');
+            
+            showStatus('Loading comparison data...');
+            
+            try {
+                // Load previous week's data
+                const currentWeek = document.getElementById('week-input').value;
+                const prevWeek = getPreviousWeek(currentWeek);
+                
+                const response = await fetch(`/api/schedule/week?week_start=${prevWeek}`, {
+                    headers: { 'X-API-Key': API_KEY }
+                });
+                const prevData = await response.json();
+                
+                // Generate comparison HTML
+                let html = `
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+                        <div>
+                            <h3>Current Week</h3>
+                            <div class="stats">
+                                <div>Total Jobs: ${currentWeekData.scheduled_jobs.length}</div>
+                                <div>Total Hours: ${calculateTotalHours(currentWeekData.scheduled_jobs)}</div>
+                            </div>
+                        </div>
+                        <div>
+                            <h3>Previous Week</h3>
+                            <div class="stats">
+                                <div>Total Jobs: ${prevData.scheduled_jobs.length}</div>
+                                <div>Total Hours: ${calculateTotalHours(prevData.scheduled_jobs)}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="margin-top: 2rem;">
+                        <h4>Efficiency Comparison</h4>
+                        <!-- Add more detailed comparison here -->
+                    </div>
+                `;
+                
+                content.innerHTML = html;
+                modal.classList.add('active');
+                showStatus('Ready');
+                
+            } catch (error) {
+                console.error('Error loading comparison:', error);
+                showStatus('Failed to load comparison data', 'error');
+            }
+        }
+        
+        function getPreviousWeek(weekStr) {
+            const [year, week] = weekStr.split('-W');
+            const prevWeek = parseInt(week) - 1;
+            
+            if (prevWeek < 1) {
+                return `${parseInt(year) - 1}-W52`;
+            }
+            
+            return `${year}-W${prevWeek.toString().padStart(2, '0')}`;
+        }
+        
+        function calculateTotalHours(jobs) {
+            return jobs.reduce((total, job) => total + (job.duration || 0) + (job.drive_time || 0), 0);
+        }
+        
+        // ============================================================================
+        // UTILITIES
+        // ============================================================================
+        
+        function getWeekDates() {
+            const weekInput = document.getElementById('week-input').value;
+            if (!weekInput) return [];
+            
+            const [year, weekStr] = weekInput.split('-W');
+            const weekNum = parseInt(weekStr);
+            const firstDay = getDateFromWeek(year, weekNum);
+            const dates = [];
+            
+            for (let i = 0; i < 5; i++) {
+                const date = new Date(firstDay);
+                date.setDate(date.getDate() + i);
+                dates.push(date.toISOString().split('T')[0]);
+            }
+            
+            return dates;
+        }
+        
+        function updateWeekDisplay() {
+            const weekInput = document.getElementById('week-input').value;
+            if (!weekInput) return;
+            
+            const dates = getWeekDates();
+            if (dates.length > 0) {
+                const start = formatDate(dates[0]);
+                const end = formatDate(dates[4]);
+                document.getElementById('week-display').textContent = `${start} - ${end}`;
+            }
+        }
+        
+        function formatDate(dateStr) {
+            if (!dateStr) return '';
+            const date = new Date(dateStr + 'T12:00:00');
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }
+        
+        function changeWeek(direction) {
+            const weekInput = document.getElementById('week-input');
+            const [year, weekStr] = weekInput.value.split('-W');
+            const currentWeek = parseInt(weekStr);
+            const newWeek = currentWeek + direction;
+            
+            if (newWeek < 1) {
+                weekInput.value = `${parseInt(year) - 1}-W52`;
+            } else if (newWeek > 52) {
+                weekInput.value = `${parseInt(year) + 1}-W01`;
+            } else {
+                weekInput.value = `${year}-W${newWeek.toString().padStart(2, '0')}`;
+            }
+            
+            updateWeekDisplay();
+            loadWeekData();
+        }
+        
+        function getJobPriority(dueDate) {
+            if (!dueDate) return 'normal';
+            
+            const due = new Date(dueDate);
+            const today = new Date();
+            const daysUntilDue = Math.floor((due - today) / (1000 * 60 * 60 * 24));
+            
+            if (daysUntilDue < 0) return 'urgent';
+            if (daysUntilDue <= 7) return 'high';
+            return 'normal';
+        }
+        
+        function filterJobs(jobs) {
+            const regionFilter = document.getElementById('region-filter').value;
+            const priorityFilter = document.getElementById('priority-filter').value;
+            
+            return jobs.filter(job => {
+                if (regionFilter && job.region !== regionFilter) return false;
+                if (priorityFilter && getJobPriority(job.due_date) !== priorityFilter) return false;
+                return true;
+            });
+        }
+        
+        function filterUnscheduledJobs() {
+            renderUnscheduledJobs();
+        }
+        
+        function updateStats() {
+            const stats = document.getElementById('status-stats');
+            
+            const totalScheduled = currentWeekData?.scheduled_jobs?.length || 0;
+            const totalUnscheduled = unscheduledJobs.length;
+            const urgentCount = unscheduledJobs.filter(j => getJobPriority(j.due_date) === 'urgent').length;
+            
+            stats.innerHTML = `
+                <span>${totalScheduled} scheduled</span> • 
+                <span>${totalUnscheduled} unscheduled</span>
+                ${urgentCount > 0 ? ` • <span style="color: #fbbf24;">${urgentCount} urgent</span>` : ''}
+            `;
+        }
+        
+        function showStatus(message, type = 'info') {
+            const statusText = document.getElementById('status-text');
+            statusText.textContent = message;
+            statusText.style.color = type === 'error' ? '#ef4444' : '#d1d5db';
+            
+            if (type !== 'error') {
+                setTimeout(() => {
+                    statusText.textContent = 'Ready';
+                    statusText.style.color = '#d1d5db';
+                }, 3000);
+            }
+        }
+        
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('active');
+        }
+    </script>
+</body>
+</html>
