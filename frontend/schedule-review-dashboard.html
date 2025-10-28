@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Schedule Review Dashboard - SchedulerGPT</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f3f4f6;
+            color: #1f2937;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        /* HEADER */
+        .header {
+            background: #4f46e5;
+            color: white;
+            padding: 0.75rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+        
+        .week-nav {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(255,255,255,0.1);
+            padding: 0.25rem;
+            border-radius: 6px;
+        }
+        
+        .week-nav button {
+            background: transparent;
+            border: none;
+            color: white;
+            cursor: pointer;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 1.25rem;
+        }
+        
+        .week-nav button:hover {
+            background: rgba(255,255,255,0.2);
+        }
+        
+        #week-display {
+            padding: 0 1rem;
+            font-size: 0.875rem;
+        }
+        
+        /* MAIN LAYOUT */
+        .main-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        /* DETAIL PANEL */
+        .detail-panel {
+            background: white;
+            border-bottom: 1px solid #e5e7eb;
+            min-height: 120px;
+            max-height: 200px;
+            overflow-y: auto;
+            transition: all 0.3s;
+        }
+        
+        .detail-panel.empty {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #9ca3af;
+            font-style: italic;
+        }
+        
+        .detail-content {
+            padding: 1rem;
+        }
+        
+        .detail-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.75rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        
+        .detail-header h3 {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #1f2937;
+        }
+        
+        .close-btn {
+            background: none;
+            border: none;
+            color: #6b7280;
+            cursor: pointer;
+            font-size: 1.25rem;
+            padding: 0.25rem;
+        }
+        
+        .close-btn:hover {
+            color: #374151;
+        }
+        
+        .jobs-table {
+            width: 100%;
+            font-size: 0.875rem;
+        }
+        
+        .jobs-table th {
+            text-align: left;
+            padding: 0.5rem;
+            background: #f9fafb;
+            font-weight: 600;
+            color: #4b5563;
+        }
+        
+        .jobs-table td {
+            padding: 0.5rem;
+            border-top: 1px solid #f3f4f6;
+        }
+        
+        .job-actions {
+            display: flex;
+            gap: 0.25rem;
+        }
+        
+        .job-actions button {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.75rem;
+            border: 1px solid #d1d5db;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .job-actions button:hover {
+            background: #f3f4f6;
+        }
+        
+        /* SCHEDULE GRID */
+        .schedule-container {
+            background: white;
+            margin: 1rem;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            overflow: auto;
+            max-height: 400px;
+        }
+        
+        .schedule-grid {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 700px;
+        }
+        
+        .schedule-grid th,
+        .schedule-grid td {
+            padding: 0.75rem;
+            text-align: center;
+            border: 1px solid #e5e7eb;
+        }
+        
+        .schedule-grid th {
+            background: #f9fafb;
+            font-weight: 600;
+            color: #374151;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        
+        .schedule-grid .tech-column {
+            text-align: left;
+            position: sticky;
+            left: 0;
+            background: white;
+            z-index: 5;
+            min-width: 150px;
+        }
+        
+        .tech-info {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .tech-checkbox {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+        
+        .day-cell {
+            cursor: pointer;
+            transition: background 0.2s;
+            position: relative;
+        }
+        
+        .day-cell:hover {
+            background: #f3f4f6;
+        }
+        
+        .day-cell.selected {
+            background: #dbeafe;
+            outline: 2px solid #3b82f6;
+            outline-offset: -2px;
+        }
+        
+        .job-count {
+            font-weight: 600;
+            color: #1f2937;
+        }
+        
+        .hours-info {
+            font-size: 0.75rem;
+            color: #6b7280;
+            margin-top: 0.25rem;
+        }
+        
+        .hours-info.over-capacity {
+            color: #dc2626;
+            font-weight: 600;
+        }
+        
+        .unavailable {
+            background: #f3f4f6;
+            color: #9ca3af;
+            font-style: italic;
+        }
+        
+        /* FILTER BAR */
+        .filter-bar {
+            background: white;
+            padding: 0.75rem 1.5rem;
+            margin: 0 1rem;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        
+        .filter-label {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #374151;
+        }
+        
+        .date-input {
+            padding: 0.5rem;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            font-size: 0.875rem;
+        }
+        
+        .job-count-badge {
+            background: #ef4444;
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            margin-left: auto;
+        }
+        
+        /* MAP CONTAINER */
+        .map-container {
+            flex: 1;
+            margin: 1rem;
+            margin-top: 0.5rem;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            overflow: hidden;
+            min-height: 300px;
+        }
+        
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+        
+        /* MAP POPUP */
+        .job-popup {
+            min-width: 200px;
+        }
+        
+        .job-popup h4 {
+            font-size: 0.875rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+        
+        .job-popup-info {
+            font-size: 0.75rem;
+            color: #6b7280;
+            margin-bottom: 0.75rem;
+        }
+        
+        .assign-form {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        
+        .assign-form select {
+            padding: 0.375rem;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            font-size: 0.875rem;
+        }
+        
+        .assign-btn {
+            background: #10b981;
+            color: white;
+            border: none;
+            padding: 0.5rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+        
+        .assign-btn:hover {
+            background: #059669;
+        }
+        
+        /* LOADING */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+            color: #6b7280;
+        }
+    </style>
+</head>
+<body>
+    <!-- HEADER -->
+    <header class="header">
+        <h1>📊 Schedule Review Dashboard</h1>
+        <div class="week-nav">
+            <button onclick="changeWeek(-1)">←</button>
+            <span id="week-display">Loading...</span>
+            <button onclick="changeWeek(1)">→</button>
+        </div>
+    </header>
+    
+    <!-- MAIN CONTAINER -->
+    <div class="main-container">
+        <!-- DETAIL PANEL -->
+        <div class="detail-panel empty" id="detail-panel">
+            <div>Click any job cell to view and edit details</div>
+        </div>
+        
+        <!-- SCHEDULE GRID -->
+        <div class="schedule-container">
+            <table class="schedule-grid" id="schedule-grid">
+                <thead>
+                    <tr>
+                        <th class="tech-column">Technician</th>
+                        <th>Monday<br><span id="date-mon" class="date-label"></span></th>
+                        <th>Tuesday<br><span id="date-tue" class="date-label"></span></th>
+                        <th>Wednesday<br><span id="date-wed" class="date-label"></span></th>
+                        <th>Thursday<br><span id="date-thu" class="date-label"></span></th>
+                        <th>Friday<br><span id="date-fri" class="date-label"></span></th>
+                    </tr>
+                </thead>
+                <tbody id="grid-body">
+                    <tr>
+                        <td colspan="6" class="loading">Loading schedule...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- FILTER BAR -->
+        <div class="filter-bar">
+            <span class="filter-label">Unscheduled Jobs Due Between:</span>
+            <input type="date" id="filter-start" class="date-input">
+            <span>and</span>
+            <input type="date" id="filter-end" class="date-input">
+            <span class="job-count-badge" id="unscheduled-count">0 jobs</span>
+        </div>
+        
+        <!-- MAP -->
+        <div class="map-container">
+            <div id="map"></div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <script>
+        // ============================================================================
+        // GLOBAL STATE
+        // ============================================================================
+        
+        const API_KEY = 'devkey123'; // Update this if needed
+        
+        let currentWeek = null;
+        let technicians = [];
+        let scheduledJobs = [];
+        let unscheduledJobs = [];
+        let selectedCell = null;
+        let map = null;
+        let jobMarkers = [];
+        let techRouteGroups = {};
+        
+        // Tech colors for map
+        const techColors = [
+            '#3b82f6', // blue
+            '#10b981', // green
+            '#f59e0b', // amber
+            '#8b5cf6', // purple
+            '#ec4899', // pink
+            '#14b8a6', // teal
+            '#f97316', // orange
+            '#6366f1', // indigo
+            '#84cc16', // lime
+            '#06b6d4', // cyan
+            '#a855f7'  // purple
+        ];
+        
+        // ============================================================================
+        // INITIALIZATION
+        // ============================================================================
+        
+        document.addEventListener('DOMContentLoaded', async () => {
+            initializeWeek();
+            initializeMap();
+            setDateFilterDefaults();
+            await loadData();
+            setupEventHandlers();
+        });
+        
+        function initializeWeek() {
+            const today = new Date();
+            const monday = new Date(today);
+            monday.setDate(today.getDate() - today.getDay() + 1);
+            currentWeek = monday;
+            updateWeekDisplay();
+        }
+        
+        function initializeMap() {
+            map = L.map('map').setView([40.5, -105.0], 7); // Colorado center
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+        }
+        
+        function setDateFilterDefaults() {
+            const today = new Date();
+            const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+            const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+            
+            document.getElementById('filter-start').value = firstDay.toISOString().split('T')[0];
+            document.getElementById('filter-end').value = lastDay.toISOString().split('T')[0];
+        }
+        
+        // ============================================================================
+        // DATA LOADING
+        // ============================================================================
+        
+        async function loadData() {
+            try {
+                // Load technicians
+                const techResponse = await fetch('/api/technicians/all', {
+                    headers: { 'X-API-Key': API_KEY }
+                });
+                const techData = await techResponse.json();
+                technicians = techData.technicians || [];
+                
+                // Normalize tech IDs
+                technicians = technicians.map((tech, index) => ({
+                    ...tech,
+                    id: tech.technician_id || tech.id,
+                    color: techColors[index % techColors.length]
+                }));
+                
+                // Load schedule
+                await loadWeekSchedule();
+                
+                // Load unscheduled jobs
+                await loadUnscheduledJobs();
+                
+            } catch (error) {
+                console.error('Error loading data:', error);
+                alert('Failed to load schedule data. Check console for details.');
+            }
+        }
+        
+        async function loadWeekSchedule() {
+            const weekStart = currentWeek.toISOString().split('T')[0];
+            
+            const response = await fetch(`/api/schedule/week-all?week_start=${weekStart}`, {
+                headers: { 'X-API-Key': API_KEY }
+            });
+            
+            const data = await response.json();
+            scheduledJobs = data.scheduled_jobs || [];
+            
+            console.log(`Loaded ${scheduledJobs.length} scheduled jobs for week of ${weekStart}`);
+            
+            renderScheduleGrid();
+            updateMapMarkers();
+        }
+        
+        async function loadUnscheduledJobs() {
+            const startDate = document.getElementById('filter-start').value;
+            const endDate = document.getElementById('filter-end').value;
+            
+            const response = await fetch('/api/jobs/unscheduled', {
+                headers: { 'X-API-Key': API_KEY }
+            });
+            
+            const data = await response.json();
+            const allJobs = data.jobs || data || [];
+            
+            // Filter by date range
+            unscheduledJobs = allJobs.filter(job => {
+                if (!job.due_date) return false;
+                return job.due_date >= startDate && job.due_date <= endDate;
+            });
+            
+            document.getElementById('unscheduled-count').textContent = `${unscheduledJobs.length} jobs`;
+            
+            updateMapMarkers();
+        }
+        
+        // ============================================================================
+        // RENDERING
+        // ============================================================================
+        
+        function renderScheduleGrid() {
+            const tbody = document.getElementById('grid-body');
+            tbody.innerHTML = '';
+            
+            // Update date headers
+            const days = ['mon', 'tue', 'wed', 'thu', 'fri'];
+            days.forEach((day, index) => {
+                const date = new Date(currentWeek);
+                date.setDate(date.getDate() + index);
+                document.getElementById(`date-${day}`).textContent = 
+                    date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            });
+            
+            // Group jobs by tech and day
+            const jobsByTechDay = {};
+            scheduledJobs.forEach(job => {
+                const key = `${job.technician_id}-${getDayKey(job.date)}`;
+                if (!jobsByTechDay[key]) {
+                    jobsByTechDay[key] = [];
+                }
+                jobsByTechDay[key].push(job);
+            });
+            
+            // Render tech rows
+            technicians.forEach(tech => {
+                if (!tech.active) return;
+                
+                const row = document.createElement('tr');
+                
+                // Tech column
+                const techCell = document.createElement('td');
+                techCell.className = 'tech-column';
+                techCell.innerHTML = `
+                    <div class="tech-info">
+                        <input type="checkbox" 
+                               class="tech-checkbox" 
+                               id="tech-check-${tech.id}"
+                               onchange="toggleTechRoute(${tech.id})">
+                        <label for="tech-check-${tech.id}">${tech.name}</label>
+                    </div>
+                `;
+                row.appendChild(techCell);
+                
+                // Day cells
+                days.forEach((day, index) => {
+                    const jobs = jobsByTechDay[`${tech.id}-${day}`] || [];
+                    const cell = document.createElement('td');
+                    cell.className = 'day-cell';
+                    cell.dataset.techId = tech.id;
+                    cell.dataset.day = day;
+                    
+                    if (jobs.length > 0) {
+                        const totalWork = jobs.reduce((sum, job) => sum + (job.duration || 0), 0);
+                        const totalDrive = jobs.reduce((sum, job) => sum + (job.drive_time || 0), 0);
+                        
+                        cell.innerHTML = `
+                            <div class="job-count">${jobs.length} job${jobs.length > 1 ? 's' : ''}</div>
+                            <div class="hours-info ${totalWork + totalDrive > 10 ? 'over-capacity' : ''}">
+                                ${totalWork.toFixed(1)}h + ${totalDrive.toFixed(1)}h drive
+                            </div>
+                        `;
+                        
+                        cell.onclick = () => showDayDetails(tech, day, jobs);
+                    } else {
+                        cell.innerHTML = '<div style="color: #d1d5db;">-</div>';
+                    }
+                    
+                    row.appendChild(cell);
+                });
+                
+                tbody.appendChild(row);
+            });
+        }
+        
+        function showDayDetails(tech, day, jobs) {
+            // Remove previous selection
+            document.querySelectorAll('.day-cell').forEach(cell => {
+                cell.classList.remove('selected');
+            });
+            
+            // Mark selected
+            const cell = document.querySelector(`[data-tech-id="${tech.id}"][data-day="${day}"]`);
+            if (cell) cell.classList.add('selected');
+            
+            // Update detail panel
+            const panel = document.getElementById('detail-panel');
+            panel.classList.remove('empty');
+            
+            const date = new Date(currentWeek);
+            date.setDate(date.getDate() + ['mon', 'tue', 'wed', 'thu', 'fri'].indexOf(day));
+            
+            panel.innerHTML = `
+                <div class="detail-content">
+                    <div class="detail-header">
+                        <h3>${tech.name} - ${date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</h3>
+                        <button class="close-btn" onclick="closeDetails()">×</button>
+                    </div>
+                    <table class="jobs-table">
+                        <thead>
+                            <tr>
+                                <th>WO</th>
+                                <th>Site</th>
+                                <th>Location</th>
+                                <th>Hours</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${jobs.map(job => `
+                                <tr>
+                                    <td>${job.work_order}</td>
+                                    <td>${job.site_name || ''}</td>
+                                    <td>${job.site_city || ''}, ${job.site_state || ''}</td>
+                                    <td>${job.duration || 0}h</td>
+                                    <td class="job-actions">
+                                        <button onclick="moveJob(${job.work_order})">Move</button>
+                                        <button onclick="removeJob(${job.work_order})">Remove</button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+        
+        function closeDetails() {
+            const panel = document.getElementById('detail-panel');
+            panel.classList.add('empty');
+            panel.innerHTML = '<div>Click any job cell to view and edit details</div>';
+            
+            document.querySelectorAll('.day-cell').forEach(cell => {
+                cell.classList.remove('selected');
+            });
+        }
+        
+        // ============================================================================
+        // MAP FUNCTIONS
+        // ============================================================================
+        
+        function updateMapMarkers() {
+            // Clear existing markers
+            jobMarkers.forEach(marker => map.removeLayer(marker));
+            jobMarkers = [];
+            
+            // Clear tech routes
+            Object.values(techRouteGroups).forEach(group => map.removeLayer(group));
+            techRouteGroups = {};
+            
+            // Add unscheduled job markers
+            unscheduledJobs.forEach(job => {
+                if (job.site_latitude && job.site_longitude) {
+                    const marker = L.marker([job.site_latitude, job.site_longitude], {
+                        icon: L.divIcon({
+                            className: 'custom-div-icon',
+                            html: `<div style="background-color: #ef4444; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>`,
+                            iconSize: [16, 16],
+                            iconAnchor: [8, 8]
+                        })
+                    });
+                    
+                    marker.bindPopup(createJobPopup(job));
+                    marker.addTo(map);
+                    jobMarkers.push(marker);
+                }
+            });
+            
+            // Add scheduled job markers by tech (if checkbox checked)
+            technicians.forEach(tech => {
+                const checkbox = document.getElementById(`tech-check-${tech.id}`);
+                if (checkbox && checkbox.checked) {
+                    showTechRoute(tech);
+                }
+            });
+        }
+        
+        function toggleTechRoute(techId) {
+            const tech = technicians.find(t => t.id === techId);
+            if (!tech) return;
+            
+            const checkbox = document.getElementById(`tech-check-${techId}`);
+            if (checkbox.checked) {
+                showTechRoute(tech);
+            } else {
+                hideTechRoute(tech);
+            }
+        }
+        
+        function showTechRoute(tech) {
+            const techJobs = scheduledJobs.filter(job => job.technician_id === tech.id);
+            const markers = [];
+            
+            techJobs.forEach(job => {
+                if (job.site_latitude && job.site_longitude) {
+                    const marker = L.marker([job.site_latitude, job.site_longitude], {
+                        icon: L.divIcon({
+                            className: 'custom-div-icon',
+                            html: `<div style="background-color: ${tech.color}; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>`,
+                            iconSize: [16, 16],
+                            iconAnchor: [8, 8]
+                        })
+                    });
+                    
+                    marker.bindPopup(`
+                        <div class="job-popup">
+                            <h4>WO ${job.work_order}</h4>
+                            <div class="job-popup-info">
+                                ${job.site_name}<br>
+                                ${job.site_city}, ${job.site_state}<br>
+                                Assigned to: ${tech.name}<br>
+                                Date: ${new Date(job.date).toLocaleDateString()}
+                            </div>
+                        </div>
+                    `);
+                    
+                    markers.push(marker);
+                }
+            });
+            
+            if (markers.length > 0) {
+                techRouteGroups[tech.id] = L.layerGroup(markers);
+                techRouteGroups[tech.id].addTo(map);
+            }
+        }
+        
+        function hideTechRoute(tech) {
+            if (techRouteGroups[tech.id]) {
+                map.removeLayer(techRouteGroups[tech.id]);
+                delete techRouteGroups[tech.id];
+            }
+        }
+        
+        function createJobPopup(job) {
+            const availableTechs = technicians.filter(t => t.active);
+            const weekDays = getWeekDays();
+            
+            return `
+                <div class="job-popup">
+                    <h4>WO ${job.work_order}</h4>
+                    <div class="job-popup-info">
+                        ${job.site_name || 'No site name'}<br>
+                        ${job.site_city || ''}, ${job.site_state || ''}<br>
+                        Due: ${job.due_date ? new Date(job.due_date).toLocaleDateString() : 'No due date'}<br>
+                        Est: ${job.est_hours || 0} hours
+                    </div>
+                    <div class="assign-form">
+                        <select id="popup-tech-${job.work_order}">
+                            <option value="">Select Tech...</option>
+                            ${availableTechs.map(tech => 
+                                `<option value="${tech.id}">${tech.name}</option>`
+                            ).join('')}
+                        </select>
+                        <select id="popup-day-${job.work_order}">
+                            <option value="">Select Day...</option>
+                            ${weekDays.map(day => 
+                                `<option value="${day.date}">${day.label}</option>`
+                            ).join('')}
+                        </select>
+                        <button class="assign-btn" onclick="assignJobFromMap(${job.work_order})">
+                            Assign Job
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // ============================================================================
+        // ACTIONS
+        // ============================================================================
+        
+        async function assignJobFromMap(workOrder) {
+            const techSelect = document.getElementById(`popup-tech-${workOrder}`);
+            const daySelect = document.getElementById(`popup-day-${workOrder}`);
+            
+            const techId = parseInt(techSelect.value);
+            const date = daySelect.value;
+            
+            if (!techId || !date) {
+                alert('Please select both technician and day');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/schedule/assign', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-Key': API_KEY
+                    },
+                    body: JSON.stringify({
+                        work_order: workOrder,
+                        technician_id: techId,
+                        date: date
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    // Close popup
+                    map.closePopup();
+                    
+                    // Reload data
+                    await loadWeekSchedule();
+                    await loadUnscheduledJobs();
+                    
+                    alert('Job assigned successfully');
+                } else {
+                    alert('Failed to assign job: ' + (result.errors ? result.errors[0] : 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error assigning job:', error);
+                alert('Error assigning job. Check console for details.');
+            }
+        }
+        
+        async function moveJob(workOrder) {
+            const newDate = prompt('Enter new date (YYYY-MM-DD):');
+            if (!newDate) return;
+            
+            // Implementation for moving job
+            alert('Move job feature coming soon');
+        }
+        
+        async function removeJob(workOrder) {
+            if (!confirm('Remove this job from the schedule?')) return;
+            
+            try {
+                const response = await fetch(`/api/schedule/remove/${workOrder}`, {
+                    method: 'DELETE',
+                    headers: { 'X-API-Key': API_KEY }
+                });
+                
+                if (response.ok) {
+                    await loadWeekSchedule();
+                    closeDetails();
+                    alert('Job removed from schedule');
+                }
+            } catch (error) {
+                console.error('Error removing job:', error);
+                alert('Failed to remove job');
+            }
+        }
+        
+        // ============================================================================
+        // UTILITIES
+        // ============================================================================
+        
+        function updateWeekDisplay() {
+            const endDate = new Date(currentWeek);
+            endDate.setDate(endDate.getDate() + 4);
+            
+            const display = `Week ${getWeekNumber(currentWeek)} - ${
+                currentWeek.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+            } to ${
+                endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+            }`;
+            
+            document.getElementById('week-display').textContent = display;
+        }
+        
+        function getWeekNumber(date) {
+            const firstJan = new Date(date.getFullYear(), 0, 1);
+            const days = Math.floor((date - firstJan) / (24 * 60 * 60 * 1000));
+            return Math.ceil((days + firstJan.getDay() + 1) / 7);
+        }
+        
+        function getDayKey(dateStr) {
+            const date = new Date(dateStr + 'T12:00:00'); // Add noon time to avoid timezone issues
+            const dayIndex = date.getDay();
+            const days = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+            return days[dayIndex];
+        }
+        
+        function getWeekDays() {
+            const days = [];
+            for (let i = 0; i < 5; i++) {
+                const date = new Date(currentWeek);
+                date.setDate(date.getDate() + i);
+                days.push({
+                    date: date.toISOString().split('T')[0],
+                    label: date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
+                });
+            }
+            return days;
+        }
+        
+        async function changeWeek(direction) {
+            currentWeek.setDate(currentWeek.getDate() + (direction * 7));
+            updateWeekDisplay();
+            closeDetails();
+            await loadWeekSchedule();
+        }
+        
+        function setupEventHandlers() {
+            document.getElementById('filter-start').addEventListener('change', loadUnscheduledJobs);
+            document.getElementById('filter-end').addEventListener('change', loadUnscheduledJobs);
+        }
+    </script>
+</body>
+</html>
