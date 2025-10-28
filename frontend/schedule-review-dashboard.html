@@ -699,8 +699,59 @@
         // ============================================================================
         // MAP FUNCTIONS
         // ============================================================================
-        
+        // Simple city/state to approximate coordinates (for testing)
+        const cityCoordinates = {
+            'Denver, CO': [39.7392, -104.9903],
+            'Aurora, CO': [39.7294, -104.8319],
+            'Lakewood, CO': [39.7047, -105.0814],
+            'Fort Collins, CO': [40.5853, -105.0844],
+            'Colorado Springs, CO': [38.8339, -104.8214],
+            'Cheyenne, WY': [41.1400, -104.8202],
+            'Casper, WY': [42.8501, -106.3252],
+            'Salt Lake City, UT': [40.7608, -111.8910],
+            'Lincoln, NE': [40.8136, -96.7026],
+            'Phoenix, AZ': [33.4484, -112.0740],
+            'Boise, ID': [43.6150, -116.2023]
+        };
+
+        function getJobCoordinates(job) {
+            // Try standard coordinate fields first (your actual field names)
+            if (job.latitude && job.longitude) {
+                return [job.latitude, job.longitude];
+            }
+            
+            // Try other possible field names
+            if (job.site_latitude && job.site_longitude) {
+                return [job.site_latitude, job.site_longitude];
+            }
+            
+            if (job.lat && job.lng) {
+                return [job.lat, job.lng];
+            }
+            
+            if (job.site_lat && job.site_lng) {
+                return [job.site_lat, job.site_lng];
+            }
+            
+            // Fallback to city lookup
+            if (job.site_city && job.site_state) {
+                const cityKey = `${job.site_city}, ${job.site_state}`;
+                const coords = cityCoordinates[cityKey];
+                if (coords) {
+                    // Add small random offset to prevent overlapping
+                    return [
+                        coords[0] + (Math.random() - 0.5) * 0.1,
+                        coords[1] + (Math.random() - 0.5) * 0.1
+                    ];
+                }
+            }
+            
+            return null;
+        }
         function updateMapMarkers() {
+            console.log('=== Updating Map Markers ===');
+            console.log(`Unscheduled jobs: ${unscheduledJobs.length}`);
+            
             // Clear existing markers
             jobMarkers.forEach(marker => map.removeLayer(marker));
             jobMarkers = [];
@@ -709,10 +760,16 @@
             Object.values(techRouteGroups).forEach(group => map.removeLayer(group));
             techRouteGroups = {};
             
+            // Check for coordinate fields
+            let jobsWithCoords = 0;
+            let jobsWithoutCoords = 0;
+            
             // Add unscheduled job markers
             unscheduledJobs.forEach(job => {
-                if (job.site_latitude && job.site_longitude) {
-                    const marker = L.marker([job.site_latitude, job.site_longitude], {
+                const coords = getJobCoordinates(job);
+                if (coords) {
+                    jobsWithCoords++;
+                    const marker = L.marker(coords, {
                         icon: L.divIcon({
                             className: 'custom-div-icon',
                             html: `<div style="background-color: #ef4444; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>`,
@@ -724,8 +781,22 @@
                     marker.bindPopup(createJobPopup(job));
                     marker.addTo(map);
                     jobMarkers.push(marker);
+                } else {
+                    jobsWithoutCoords++;
+                    // Log first few jobs without coords to see field names
+                    if (jobsWithoutCoords <= 3) {
+                        console.log('Job without coords:', {
+                            work_order: job.work_order,
+                            site_city: job.site_city,
+                            site_state: job.site_state,
+                            available_fields: Object.keys(job).filter(k => k.includes('lat') || k.includes('lng') || k.includes('lon'))
+                        });
+                    }
                 }
             });
+            
+            console.log(`Unscheduled jobs with coordinates: ${jobsWithCoords}`);
+            console.log(`Unscheduled jobs without coordinates: ${jobsWithoutCoords}`);
             
             // Add scheduled job markers by tech (if checkbox checked)
             technicians.forEach(tech => {
@@ -749,12 +820,19 @@
         }
         
         function showTechRoute(tech) {
+            console.log(`=== Showing route for ${tech.name} ===`);
             const techJobs = scheduledJobs.filter(job => job.technician_id === tech.id);
+            console.log(`Found ${techJobs.length} jobs for tech ${tech.id}`);
+            
             const markers = [];
+            let jobsWithCoords = 0;
+            let jobsWithoutCoords = 0;
             
             techJobs.forEach(job => {
-                if (job.site_latitude && job.site_longitude) {
-                    const marker = L.marker([job.site_latitude, job.site_longitude], {
+                const coords = getJobCoordinates(job);
+                if (coords) {
+                    jobsWithCoords++;
+                    const marker = L.marker(coords, {
                         icon: L.divIcon({
                             className: 'custom-div-icon',
                             html: `<div style="background-color: ${tech.color}; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>`,
@@ -776,12 +854,28 @@
                     `);
                     
                     markers.push(marker);
+                } else {
+                    jobsWithoutCoords++;
+                    // Log first job without coords
+                    if (jobsWithoutCoords === 1) {
+                        console.log('Scheduled job fields:', Object.keys(job));
+                        console.log('Sample scheduled job:', {
+                            work_order: job.work_order,
+                            site_name: job.site_name,
+                            site_city: job.site_city,
+                            site_state: job.site_state
+                        });
+                    }
                 }
             });
+            
+            console.log(`Scheduled jobs with coordinates: ${jobsWithCoords}`);
+            console.log(`Scheduled jobs without coordinates: ${jobsWithoutCoords}`);
             
             if (markers.length > 0) {
                 techRouteGroups[tech.id] = L.layerGroup(markers);
                 techRouteGroups[tech.id].addTo(map);
+                console.log(`Added ${markers.length} markers to map for ${tech.name}`);
             }
         }
         
