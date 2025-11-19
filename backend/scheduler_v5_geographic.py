@@ -25,13 +25,14 @@ class Job:
     sow_1: str
     due_date: date
     jp_priority: str
-    est_hours: float
+    duration: float
     is_recurring_site: bool
     is_night: bool
     night_test: bool
     days_til_due: int
     priority_rank: int
     distance_from_tech_home: float
+    start_time: Optional[str] = None
 
 @dataclass
 class DaySchedule:
@@ -71,6 +72,91 @@ def calculate_drive_time(distance_miles: float, avg_speed: float = 55) -> float:
     Default: 55 mph average speed
     """
     return distance_miles / avg_speed
+def calculate_start_times(daily_jobs: List[Job], start_location: Tuple[float, float]) -> None:
+    """
+    Calculate start times for each job in the day.
+    
+    Rules:
+    - Night jobs (NT in SOW): Must be on-site by 9:00 PM
+    - Regular jobs: Start at 7:00 AM, then sequence by travel + work time
+    
+    Modifies jobs in-place to add start_time field
+    """
+    from datetime import datetime, timedelta
+    
+    if not daily_jobs:
+        return
+    
+    # Check if first job is a night job
+    first_job = daily_jobs[0]
+    is_night_job = 'NT' in (first_job.sow_1 or '')
+    
+    if is_night_job:
+        # Night job - work backwards from 9 PM on-site time
+        onsite_time = datetime.strptime('21:00', '%H:%M')  # 9 PM
+        
+        # Calculate drive time to first job
+        distance_to_first = haversine(
+            start_location[0], start_location[1],
+            first_job.latitude, first_job.longitude
+        )
+        drive_time_hours = distance_to_first / 55  # 55 mph average
+        drive_time_minutes = int(drive_time_hours * 60)
+        
+        # Start time = on-site time - drive time
+        start_time = onsite_time - timedelta(minutes=drive_time_minutes)
+        first_job.start_time = start_time.strftime('%H:%M')
+        
+        current_time = onsite_time
+        
+    else:
+        # Regular job - start at 7 AM
+        current_time = datetime.strptime('07:00', '%H:%M')
+        
+        # Calculate drive to first job
+        distance_to_first = haversine(
+            start_location[0], start_location[1],
+            first_job.latitude, first_job.longitude
+        )
+        drive_time_hours = distance_to_first / 55
+        drive_time_minutes = int(drive_time_hours * 60)
+        
+        first_job.start_time = current_time.strftime('%H:%M')
+        
+        # Arrival time = start + drive
+        current_time = current_time + timedelta(minutes=drive_time_minutes)
+    
+    # Calculate subsequent job start times
+    for i in range(len(daily_jobs) - 1):
+        current_job = daily_jobs[i]
+        next_job = daily_jobs[i + 1]
+        
+        # Add work time for current job
+        work_minutes = int(current_job.duration * 60)
+        current_time = current_time + timedelta(minutes=work_minutes)
+        
+        # Add drive time to next job
+        distance = haversine(
+            current_job.latitude, current_job.longitude,
+            next_job.latitude, next_job.longitude
+        )
+        drive_minutes = int((distance / 55) * 60)
+        current_time = current_time + timedelta(minutes=drive_minutes)
+        
+        # Check if next job is night job
+        if 'NT' in (next_job.sow_1 or ''):
+            # Override - must start so we're on-site by 9 PM
+            onsite_time = datetime.strptime('21:00', '%H:%M')
+            distance_to_next = haversine(
+                current_job.latitude, current_job.longitude,
+                next_job.latitude, next_job.longitude
+            )
+            drive_to_next = int((distance_to_next / 55) * 60)
+            next_job.start_time = (onsite_time - timedelta(minutes=drive_to_next)).strftime('%H:%M')
+            current_time = onsite_time
+        else:
+            next_job.start_time = current_time.strftime('%H:%M')
+
 
 # ============================================================================
 # REGION ANALYSIS
@@ -140,7 +226,7 @@ def get_all_jobs_in_region(
             sow_1=row['sow_1'],
             due_date=datetime.fromisoformat(row['due_date']).date(),
             jp_priority=row['jp_priority'],
-            est_hours=float(row['est_hours']),
+            duration=float(row['duration']),
             is_recurring_site=row['is_recurring_site'],
             is_night=row['is_night'] or False,
             night_test=row['night_test'] or False,
@@ -158,8 +244,8 @@ def get_all_jobs_in_region(
 def build_daily_route(
     jobs: List[Job],
     start_location: Tuple[float, float],
-    max_daily_hours: float = 14,
-    max_work_hours: float = 12
+    max_daily_hours: float = 12,
+    max_work_hours: float = 10.5
 ) -> Tuple[List[Job], float, float, Tuple[float, float]]:
     """
     Build one day's route using nearest-neighbor algorithm
@@ -195,10 +281,10 @@ def build_daily_route(
         drive_time = calculate_drive_time(distance)
         
         # Check if job fits today (work + drive must be < max_daily_hours)
-        if work_hours + drive_hours + drive_time + nearest_job.est_hours <= max_daily_hours:
+        if work_hours + drive_hours + drive_time + nearest_job.duration <= max_daily_hours:
             # Schedule this job
             scheduled_today.append(nearest_job)
-            work_hours += nearest_job.est_hours
+            work_hours += nearest_job.duration
             drive_hours += drive_time
             current_location = (nearest_job.latitude, nearest_job.longitude)
             remaining_jobs.remove(nearest_job)
@@ -252,7 +338,7 @@ def schedule_week_geographic(
         month_end = date(week_start.year, week_start.month + 1, 1) - timedelta(days=1)
     
     # STEP 1: Analyze regions
-    print(f"\n📊 Analyzing regions for Tech {tech_id}...")
+    print(f"\nðŸ“Š Analyzing regions for Tech {tech_id}...")
     all_regions = analyze_regions_for_tech(tech_id, month_start, month_end, sow_filter)
     
     # Filter to user-selected regions if specified
@@ -266,7 +352,7 @@ def schedule_week_geographic(
         }
     
     # STEP 2: Score regions and pick best one
-    print(f"\n🎯 Scoring regions...")
+    print(f"\nðŸŽ¯ Scoring regions...")
     for region in all_regions:
         score = 0
         
@@ -297,11 +383,11 @@ def schedule_week_geographic(
     
     # Pick highest scoring region
     primary_region = max(all_regions, key=lambda r: r['score'])
-    print(f"\n✅ Selected region: {primary_region['region_name']} "
+    print(f"\nâœ… Selected region: {primary_region['region_name']} "
           f"(score: {primary_region['score']})")
     
     # STEP 3: Get ALL jobs in primary region
-    print(f"\n📋 Loading ALL jobs in {primary_region['region_name']}...")
+    print(f"\nðŸ“‹ Loading ALL jobs in {primary_region['region_name']}...")
     jobs = get_all_jobs_in_region(
         tech_id=tech_id,
         region_name=primary_region['region_name'],
@@ -316,7 +402,7 @@ def schedule_week_geographic(
     print(f"    - Other: {sum(1 for j in jobs if j.priority_rank > 3)}")
     
     # STEP 4: Build week schedule using route optimization
-    print(f"\n🗺️  Building optimized routes...")
+    print(f"\nðŸ—ºï¸  Building optimized routes...")
     week_schedule = {}
     current_location = tech_home
     remaining_jobs = jobs.copy()
@@ -329,14 +415,71 @@ def schedule_week_geographic(
         day_name = weekdays[day_num]
         
         print(f"\n  {day_name} ({day_date}):")
+         
+        # Update for time off 11/14/2025 # Check for time off on this day
+        time_off_result = sb.table('time_off_requests')\
+            .select('*')\
+            .eq('technician_id', tech_id)\
+            .eq('approved', True)\
+            .lte('start_date', day_date.isoformat())\
+            .gte('end_date', day_date.isoformat())\
+            .execute()
         
+        # Adjust available hours based on time off
+        adjusted_daily_hours = max_daily_hours
+        time_off_reason = None
+        
+        if time_off_result.data:
+            time_off = time_off_result.data[0]
+            hours_off = float(time_off.get('hours_per_day', 4))  # Default to 4 hours (half day)
+            adjusted_daily_hours = hours_off
+            time_off_reason = time_off.get('reason', 'Time off')
+            
+            if adjusted_daily_hours <= 0:
+                # Full day off - skip this day
+                print(f"    ⛔ FULL DAY OFF: {time_off_reason}")
+                week_schedule[day_name.lower()] = DaySchedule(
+                    date=day_date,
+                    day_name=day_name,
+                    jobs=[],
+                    work_hours=0,
+                    drive_hours=0,
+                    total_hours=0,
+                    starts_from_home=True,
+                    ends_at_home=True,
+                    hotel_location=None,
+                    last_location=tech_home
+                )
+                continue  # Skip to next day
+            else:
+                # Partial day off
+                print(f"    ⏰ PARTIAL TIME OFF: {hours_off}h off ({time_off_reason}), {adjusted_daily_hours}h available")
+        
+        # Build route for this day (using adjusted hours)
+        daily_jobs, work_hours, drive_hours, end_location = build_daily_route(
+            jobs=remaining_jobs,
+            start_location=current_location,
+            max_daily_hours=adjusted_daily_hours  # Use adjusted hours instead of max_daily_hours
+        )    
         # Build route for this day
         daily_jobs, work_hours, drive_hours, end_location = build_daily_route(
             jobs=remaining_jobs,
             start_location=current_location,
-            max_daily_hours=max_daily_hours
+            max_daily_hours=adjusted_daily_hours
         )
-        
+        calculate_start_times(daily_jobs, current_location)
+        # BEFORE scheduling jobs for the day, add this:
+        if day_name == 'Monday' or current_location == tech_home:
+            # Starting from home - need to add drive to first job
+            if daily_jobs:
+                first_job = daily_jobs[0]
+                distance_to_first = haversine(
+                    tech_home[0], tech_home[1],
+                    first_job.latitude, first_job.longitude
+                )
+                initial_drive_time = calculate_drive_time(distance_to_first)
+                drive_hours += initial_drive_time
+                print(f"    Adding {initial_drive_time:.1f}h drive from home to first job")
         # Remove scheduled jobs from remaining
         for job in daily_jobs:
             if job in remaining_jobs:
@@ -350,8 +493,13 @@ def schedule_week_geographic(
         drive_time_home = calculate_drive_time(distance_to_home)
         
         # Determine hotel stay
-        hotel_stay = distance_to_home > 90
-        ends_at_home = not hotel_stay
+        if day_name == 'Friday':
+            # Always go home on Friday - no weekend hotels
+            hotel_stay = False
+            ends_at_home = True
+        else:
+            hotel_stay = distance_to_home > 90
+            ends_at_home = not hotel_stay
         
         # If staying at hotel, don't add drive time home
         # If going home, add drive time
@@ -374,14 +522,14 @@ def schedule_week_geographic(
         print(f"    Jobs: {len(daily_jobs)}, Work: {work_hours:.1f}h, "
               f"Drive: {total_drive_hours:.1f}h, Total: {total_hours:.1f}h")
         if hotel_stay:
-            print(f"    🏨 Hotel stay in {week_schedule[day_name.lower()].hotel_location}")
+            print(f"    ðŸ¨ Hotel stay in {week_schedule[day_name.lower()].hotel_location}")
         
         # Next day starts from hotel or home
         current_location = end_location if hotel_stay else tech_home
         total_week_hours += total_hours
     
     # STEP 5: Check if we met target hours
-    print(f"\n📊 Week total: {total_week_hours:.1f} hours (target: {target_weekly_hours})")
+    print(f"\nðŸ“Š Week total: {total_week_hours:.1f} hours (target: {target_weekly_hours})")
     
     warnings = []
     suggestions = []
@@ -423,8 +571,9 @@ def schedule_week_geographic(
                         "work_order": j.work_order,
                         "site_name": j.site_name,
                         "sow": j.sow_1,
-                        "est_hours": j.est_hours,
-                        "priority": j.jp_priority
+                        "duration": j.duration,
+                        "priority": j.jp_priority,
+                        "start_time": j.start_time
                     } for j in sched.jobs
                 ],
                 "work_hours": sched.work_hours,

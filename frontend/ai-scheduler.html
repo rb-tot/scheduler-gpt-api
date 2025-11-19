@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Scheduler - Geographic Approach</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
         * {
             margin: 0;
@@ -322,22 +324,79 @@
         .warnings-section li, .suggestions-section li {
             margin-bottom: 5px;
         }
+        /* Modal styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 9999;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            overflow: auto;
+        }
+
+        .modal-content {
+            background-color: white;
+            margin: 2% auto;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            position: relative;
+        }
+
+        .modal-header {
+            padding: 20px;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        .modal-body {
+            padding: 20px;
+        }
+
+        .close {
+            color: #9ca3af;
+            font-size: 32px;
+            font-weight: bold;
+            cursor: pointer;
+            line-height: 20px;
+        }
+
+        .close:hover {
+            color: #1f2937;
+        }
     </style>
 </head>
 <body>
+<body>
+    <div class="header">
+        <h1>🤖 AI Scheduler</h1>
+        <div class="nav-buttons">
+            <a href="/data-manager" class="btn btn-secondary">📊 Data Manager</a>
+            <a href="/schedule-review-dashboard" class="btn btn-primary">📅 Dashboard</a>
+            <a href="/tech-manager" class="btn btn-secondary">👷 Tech Manager</a>
+        </div>
+    </div>
     <div class="container">
-        <!-- Header -->
-        <div class="header">
-            <h1>🤖 AI Scheduler - Geographic Approach</h1>
-            <p>Intelligent route optimization with regional focus</p>
+        <div style="margin-bottom: 20px;">
+            <p style="font-size: 18px; color: #666;">Intelligent route optimization with regional focus</p>
         </div>
 
-        <!-- Step 1: Select Technician -->
+        <!-- Select Technician -->
         <div class="card">
-            <h2>Step 1: Select Technician</h2>
+            <h2>Select Technician</h2>
+            <p style="color: #f59e0b; font-size: 14px; margin-bottom: 10px;">📌 Note: Select week/date first if not scheduling current month</p>
             <div class="form-group">
-                <label for="tech-select">Choose technician(s) - Hold Ctrl (or Cmd) to select multiple:</label>
-                <select id="tech-select" class="form-control" multiple size="8" style="height: 200px;"></select><select id="tech-select" class="form-control">
+                <label for="tech-select">Choose technician:</label>
+                <select id="tech-select" class="form-control">
                     <option value="">Loading technicians...</option>
                 </select>
             </div>
@@ -345,7 +404,7 @@
 
         <!-- Step 2: Select Regions -->
         <div class="card">
-            <h2>Step 2: Select Regions to Schedule</h2>
+            <h2>Select Regions to Schedule</h2>
             <div id="region-checkboxes" class="region-checkboxes">
                 <p style="color: #666;">Select a technician first</p>
             </div>
@@ -353,7 +412,7 @@
 
         <!-- Step 3: Configure Schedule -->
         <div class="card">
-            <h2>Step 3: Configure Schedule</h2>
+            <h2>Configure Schedule</h2>
             
             <div class="form-group">
                 <label for="week-select">Week to schedule:</label>
@@ -382,12 +441,24 @@
             <div class="loading">Click "Generate Schedule" to begin</div>
         </div>
     </div>
-
+    <div id="schedule-map-modal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 95%; width: 1400px; height: 90vh;">
+            <div class="modal-header">
+                <h2>📍 Schedule Map Preview</h2>
+                <span class="close" onclick="closeScheduleMap()">&times;</span>
+            </div>
+            <div class="modal-body" style="height: calc(100% - 60px); padding: 0;">
+                <div id="schedule-map" style="height: 100%; width: 100%;"></div>
+            </div>
+        </div>
+    </div>
     <script>
         const API_KEY = 'devkey123';
         let selectedTechId = null;
         let selectedRegions = [];
-
+        let currentScheduleResult = null;
+        let scheduleMap = null;
+        let scheduleMapData = null;
         // ============================================================================
         // INITIALIZATION
         // ============================================================================
@@ -455,12 +526,14 @@
                     return;
                 }
                 
+                const activeTechs = data.technicians.filter(tech => tech.active !== false);
+
                 select.innerHTML = '<option value="">Select a technician...</option>' +
-                    data.technicians.map(tech => 
+                    activeTechs.map(tech => 
                         `<option value="${tech.technician_id}">${tech.name} - ${tech.home_location || 'Unknown location'}</option>`
                     ).join('');
-                
-                console.log(`✓ Loaded ${data.technicians.length} technicians`);
+
+                console.log(`✓ Loaded ${activeTechs.length} active technicians`);
                 
             } catch (error) {
                 console.error('Error loading technicians:', error);
@@ -482,10 +555,23 @@
             container.innerHTML = '<div class="loading">Loading regions...</div>';
             
             try {
-                // Get current month for analysis
-                const now = new Date();
-                const monthYear = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-                
+                                // Get month from selected week, not current month
+                const weekSelect = document.getElementById('week-select');
+                const selectedWeek = weekSelect ? weekSelect.value : null;
+
+                let monthYear;
+                if (selectedWeek) {
+                    // Parse YYYY-WNN format to get the month
+                    const [year, weekStr] = selectedWeek.split('-W');
+                    const weekNum = parseInt(weekStr);
+                    const weekStart = getDateOfISOWeek(weekNum, parseInt(year));
+                    monthYear = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}`;
+                } else {
+                    // Fallback to current month if no week selected
+                    const now = new Date();
+                    monthYear = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                }
+              
                 console.log(`📊 Loading regions for tech ${techId}, month ${monthYear}`);
                 
                 const response = await fetch(
@@ -516,7 +602,7 @@
                 // Display regions as checkboxes
                 container.innerHTML = data.regions.map(region => `
                     <label class="region-checkbox">
-                        <input type="checkbox" value="${region.region_name}" checked>
+                        <input type="checkbox" value="${region.region_name}">
                         <div class="region-info">
                             <strong>${region.region_name.replace(/_/g, ' ')}</strong>
                             <div class="region-stats">
@@ -566,16 +652,77 @@
                 alert('Please select a week');
                 return;
             }
-            
             // Convert week input (2025-W37) to actual date
             const [year, weekNum] = weekInput.split('-W');
             const weekStart = getDateOfISOWeek(parseInt(weekNum), parseInt(year));
             const weekStartStr = weekStart.toISOString().split('T')[0];
-            
             // Get SOW filter if any
             const sowFilter = document.getElementById('sow-filter').value || null;
-            
-            // Show results section and loading state
+            // Before scheduling, get existing scheduled jobs
+            const response = await fetch(`/api/schedule/week-all?week_start=${weekStartStr}`);
+            const existing = await response.json();
+
+            // Create a Set of tech-day combinations that are already booked
+            const bookedSlots = new Set();
+            existing.scheduled_jobs.forEach(job => {
+                const key = `${job.technician_id}-${job.date}`;
+                bookedSlots.add(key);
+            });
+                  
+                       
+            // ============ ADD THIS DOUBLE-BOOKING CHECK ============
+            // First, check if there are already scheduled jobs for this week
+            console.log('🔍 Checking for existing scheduled jobs...');
+
+            try {
+                const existingResponse = await fetch(`/api/schedule/week-all?week_start=${weekStartStr}`, {
+                    headers: { 'X-API-Key': API_KEY }
+                });
+                
+                if (existingResponse.ok) {
+                    const existingData = await existingResponse.json();
+                    const existingJobs = existingData.scheduled_jobs || [];
+                    
+                    // Filter for selected tech's jobs
+                    const techExistingJobs = existingJobs.filter(job => 
+                        job.technician_id === parseInt(selectedTechId)
+                    );
+                    
+                    if (techExistingJobs.length > 0) {
+                        // Group by date to show what's already scheduled
+                        const jobsByDate = {};
+                        techExistingJobs.forEach(job => {
+                            const date = job.date;
+                            if (!jobsByDate[date]) jobsByDate[date] = [];
+                            jobsByDate[date].push(job);
+                        });
+                        
+                        // Show warning with details
+                        const dateList = Object.entries(jobsByDate)
+                            .map(([date, jobs]) => `\n  • ${new Date(date).toLocaleDateString()}: ${jobs.length} jobs`)
+                            .join('');
+                        
+                        const userChoice = confirm(
+                            `⚠️ WARNING: This technician already has scheduled jobs this week:\n${dateList}\n\n` +
+                            `Do you want to CONTINUE and potentially create conflicts?\n\n` +
+                            `Click OK to continue anyway, or Cancel to stop.`
+                        );
+                        
+                        if (!userChoice) {
+                            resultsDiv.innerHTML = '<div class="info">Schedule generation cancelled.</div>';
+                            return;
+                        }
+                        
+                        console.warn('User chose to continue despite existing jobs:', techExistingJobs);
+                    }
+                }
+            } catch (error) {
+                console.error('Error checking existing schedule:', error);
+                // Continue anyway - don't block scheduling due to check failure
+            }
+                     
+
+        // Show results section and loading state
             const resultsDiv = document.getElementById('schedule-results');
             resultsDiv.style.display = 'block';
             resultsDiv.innerHTML = `
@@ -597,6 +744,8 @@
                     week_start: weekStartStr,
                     sow_filter: sowFilter
                 });
+
+                
                 
                 const response = await fetch('/api/schedule/generate-week-smart', {
                     method: 'POST',
@@ -617,12 +766,12 @@
                     const errorText = await response.text();
                     throw new Error(`HTTP ${response.status}: ${errorText}`);
                 }
-                
                 const data = await response.json();
                 console.log('Schedule response:', data);
-                
+                currentScheduleResult = data;
                 displayScheduleResults(data);
                 
+
             } catch (error) {
                 console.error('Error generating schedule:', error);
                 resultsDiv.innerHTML = `
@@ -721,25 +870,20 @@
             
             let html = `
                 <div class="schedule-header">
-                    <h2>📅 Generated Schedule</h2>
-                    <div class="stats">
-                        <div class="stat">
-                            <strong>${data.total_jobs_scheduled}</strong>
-                            <span>Jobs Scheduled</span>
-                        </div>
+                    <div style="margin-bottom: 20px; text-align: center; display: flex; gap: 15px; justify-content: center;">
+                        <button onclick="viewScheduleMap()" class="btn-primary" style="background: #3b82f6; font-size: 18px; padding: 15px 40px;">
+                            🗺️ View Map
+                        </button>
+                        <button onclick="saveScheduleToDatabase()" class="btn-primary" style="background: #10b981; font-size: 18px; padding: 15px 40px;">
+                            💾 Save Schedule
+                        </button>
+                    </div>
+                    <div id="save-status" style="margin-top: 10px; text-align: center;"></div>
                         <div class="stat">
                             <strong>${data.total_hours_scheduled}h</strong>
                             <span>Total Hours</span>
                         </div>
                     </div>
-                </div>
-
-                <!-- ADD THIS SAVE BUTTON -->
-                <div style="margin-bottom: 20px; text-align: center;">
-                    <button onclick="saveScheduleToDatabase()" class="btn-primary" style="background: #10b981; font-size: 18px; padding: 15px 40px;">
-                        💾 Save Schedule to Database
-                    </button>
-                    <div id="save-status" style="margin-top: 10px;"></div>
                 </div>
 
                 <div class="tech-schedule">
@@ -775,7 +919,7 @@
                                         </div>
                                         <div class="job-details">
                                             ${job.site_name}<br>
-                                            <small>${job.sow} • ${job.est_hours}h</small>
+                                            <small>${job.sow} • ${job.duration}h</small>
                                         </div>
                                     </div>
                                 `).join('')
@@ -820,7 +964,8 @@
             const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
             return weekNo;
         }
-        
+               
+        let allMarkers = [];
         function getDateOfISOWeek(week, year) {
             const simple = new Date(year, 0, 1 + (week - 1) * 7);
             const dow = simple.getDay();
@@ -830,6 +975,108 @@
             else
                 ISOweekStart.setDate(simple.getDate() + 8 - simple.getDay());
             return ISOweekStart;
+        }
+
+        
+
+        async function viewScheduleMap() {
+            if (!currentScheduleResult) {
+                alert('No schedule loaded');
+                return;
+            }
+            
+            console.log('=== MAP DEBUG ===');
+            console.log('Loading map with schedule data...');
+            
+            const techSchedule = currentScheduleResult.tech_schedules[0];
+            const schedule = techSchedule.schedule;
+            
+            // Show modal
+            document.getElementById('schedule-map-modal').style.display = 'block';
+            
+            // Initialize map if needed
+            if (!scheduleMap) {
+                scheduleMap = L.map('schedule-map').setView([39.7392, -104.9903], 7);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap contributors'
+                }).addTo(scheduleMap);
+            }
+            
+            // Clear existing markers
+            scheduleMap.eachLayer(layer => {
+                if (layer instanceof L.Marker) {
+                    scheduleMap.removeLayer(layer);
+                }
+            });
+            
+            // Day colors
+            const dayColors = {
+                'monday': '#ef4444',
+                'tuesday': '#f59e0b',
+                'wednesday': '#10b981',
+                'thursday': '#3b82f6',
+                'friday': '#8b5cf6'
+            };
+            
+            let allMarkers = [];
+            
+            // Fetch coordinates for all jobs and add markers
+            for (const [day, daySchedule] of Object.entries(schedule)) {
+                const jobs = daySchedule.jobs || [];
+                const color = dayColors[day];
+                
+                for (let index = 0; index < jobs.length; index++) {
+                    const job = jobs[index];
+                    
+                    try {
+                        // Fetch job details from job_pool to get coordinates
+                        const response = await fetch(`/api/jobs/all`);
+                        const allJobs = await response.json();
+                        const jobDetails = allJobs.find(j => j.work_order === job.work_order);
+                        
+                        if (jobDetails && jobDetails.latitude && jobDetails.longitude) {
+                            // Create custom icon with day color
+                            const icon = L.divIcon({
+                                className: 'custom-marker',
+                                html: `<div style="background: ${color}; color: white; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid white; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">${index + 1}</div>`,
+                                iconSize: [30, 30]
+                            });
+                            
+                            const marker = L.marker([jobDetails.latitude, jobDetails.longitude], { icon: icon })
+                                .bindPopup(`
+                                    <b>${day.toUpperCase()} - Stop ${index + 1}</b><br>
+                                    <strong>${job.site_name}</strong><br>
+                                    ${jobDetails.site_city}<br>
+                                    ${job.sow}<br>
+                                    ${job.duration}h<br>
+                                    Start: ${job.start_time || 'TBD'}
+                                `)
+                                .addTo(scheduleMap);
+                            
+                            allMarkers.push(marker);
+                        }
+                    } catch (error) {
+                        console.error(`Error fetching coordinates for job ${job.work_order}:`, error);
+                    }
+                }
+            }
+            
+            // Fit map to show all markers
+            if (allMarkers.length > 0) {
+                const group = L.featureGroup(allMarkers);
+                scheduleMap.fitBounds(group.getBounds().pad(0.1));
+            }
+            
+            // Force map to resize
+            setTimeout(() => {
+                scheduleMap.invalidateSize();
+            }, 100);
+            
+            console.log(`✓ Added ${allMarkers.length} markers to map`);
+        }
+
+        function closeScheduleMap() {
+            document.getElementById('schedule-map-modal').style.display = 'none';
         }
     </script>
 </body>

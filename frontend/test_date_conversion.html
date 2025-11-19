@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Date Conversion Test</title>
+</head>
+<body>
+    <h1>Excel Date Conversion Test</h1>
+    <p>Open the browser console to see results</p>
+    
+    <input type="file" id="fileInput" accept=".xlsx">
+    
+    <div id="results"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+    <script>
+        document.getElementById('fileInput').onchange = function(e) {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                
+                console.log('Testing different XLSX read options:');
+                
+                // Test 1: Default read
+                console.log('\n1. Default read:');
+                const wb1 = XLSX.read(data, {type: 'array'});
+                const data1 = XLSX.utils.sheet_to_json(wb1.Sheets[wb1.SheetNames[0]]);
+                console.log('First row:', data1[0]);
+                
+                // Test 2: With cellDates
+                console.log('\n2. With cellDates:');
+                const wb2 = XLSX.read(data, {type: 'array', cellDates: true});
+                const data2 = XLSX.utils.sheet_to_json(wb2.Sheets[wb2.SheetNames[0]]);
+                console.log('First row:', data2[0]);
+                
+                // Test 3: With raw: false
+                console.log('\n3. With raw: false:');
+                const wb3 = XLSX.read(data, {type: 'array', cellDates: true});
+                const data3 = XLSX.utils.sheet_to_json(wb3.Sheets[wb3.SheetNames[0]], {raw: false});
+                console.log('First row:', data3[0]);
+                
+                // Test 4: With dateNF
+                console.log('\n4. With dateNF:');
+                const wb4 = XLSX.read(data, {type: 'array', cellDates: true, dateNF: 'yyyy-mm-dd'});
+                const data4 = XLSX.utils.sheet_to_json(wb4.Sheets[wb4.SheetNames[0]], {raw: false, dateNF: 'yyyy-mm-dd'});
+                console.log('First row:', data4[0]);
+                
+                // Display results
+                const resultsDiv = document.getElementById('results');
+                resultsDiv.innerHTML = '<h2>Results (check console for details)</h2>';
+                resultsDiv.innerHTML += '<pre>' + JSON.stringify(data4.slice(0, 5), null, 2) + '</pre>';
+            };
+            
+            reader.readAsArrayBuffer(file);
+        };
+    </script>
+</body>
+</html>

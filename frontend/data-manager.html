@@ -1,0 +1,1193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Manager & Analysis</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f7fa;
+            padding: 20px;
+        }
+
+        /* Navigation Header */
+        .nav-header {
+            background: white;
+            padding: 15px 30px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .nav-header h1 {
+            color: #1f2937;
+            font-size: 24px;
+        }
+
+        .nav-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .nav-btn {
+            padding: 8px 16px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            text-decoration: none;
+            font-size: 14px;
+        }
+
+        .nav-btn:hover {
+            background: #2563eb;
+        }
+
+        /* Collapsible Sections */
+        .collapsible-section {
+            background: white;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .section-header {
+            padding: 15px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            user-select: none;
+        }
+
+        .section-header:hover {
+            opacity: 0.95;
+        }
+
+        .section-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .collapse-icon {
+            transition: transform 0.3s;
+        }
+
+        .collapsed .collapse-icon {
+            transform: rotate(-90deg);
+        }
+
+        .section-content {
+            padding: 20px;
+            max-height: 1000px;
+            transition: max-height 0.3s ease-out, padding 0.3s;
+        }
+
+        .collapsed .section-content {
+            max-height: 0;
+            padding: 0 20px;
+            overflow: hidden;
+        }
+
+        /* Upload Section */
+        .upload-area {
+            border: 2px dashed #cbd5e1;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+
+        .upload-area:hover {
+            border-color: #3b82f6;
+            background: #eff6ff;
+        }
+
+        .upload-area.dragging {
+            border-color: #3b82f6;
+            background: #dbeafe;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        /* Quick Actions Grid */
+        .quick-actions {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .action-card {
+            padding: 15px;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            text-align: center;
+            transition: all 0.2s;
+        }
+
+        .action-card:hover {
+            border-color: #3b82f6;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+        }
+
+        .action-card button {
+            width: 100%;
+            padding: 10px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
+        .action-card button:hover {
+            background: #2563eb;
+        }
+
+        /* Status Cards */
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .status-card {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #e5e7eb;
+        }
+
+        .status-number {
+            font-size: 32px;
+            font-weight: bold;
+            color: #1f2937;
+        }
+
+        .status-label {
+            font-size: 14px;
+            color: #6b7280;
+            margin-top: 5px;
+        }
+
+        /* Validation Messages */
+        .validation-container {
+            margin-top: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .validation-message {
+            padding: 10px;
+            margin-bottom: 8px;
+            border-radius: 6px;
+            display: flex;
+            align-items: start;
+            gap: 10px;
+        }
+
+        .validation-error {
+            background: #fee2e2;
+            border-left: 4px solid #dc2626;
+        }
+
+        .validation-warning {
+            background: #fef3c7;
+            border-left: 4px solid #f59e0b;
+        }
+
+        .validation-success {
+            background: #d1fae5;
+            border-left: 4px solid #10b981;
+        }
+
+        /* Job Management Table */
+        .job-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        .job-table th {
+            background: #f3f4f6;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid #e5e7eb;
+        }
+
+        .job-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .job-table tr:hover {
+            background: #f9fafb;
+        }
+
+        /* Modal for single job entry */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+        }
+
+        .modal-content {
+            position: relative;
+            background: white;
+            width: 90%;
+            max-width: 500px;
+            margin: 50px auto;
+            padding: 30px;
+            border-radius: 8px;
+        }
+
+        .close-modal {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            font-size: 24px;
+            cursor: pointer;
+            color: #6b7280;
+        }
+
+        .close-modal:hover {
+            color: #1f2937;
+        }
+
+        /* Loading Spinner */
+        .spinner {
+            border: 3px solid #f3f4f6;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Processing Progress */
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #e5e7eb;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 20px 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            width: 0%;
+            transition: width 0.3s;
+        }
+
+        .btn-primary {
+            padding: 10px 20px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .btn-primary:hover {
+            background: #2563eb;
+        }
+
+        .btn-danger {
+            background: #dc2626;
+        }
+
+        .btn-danger:hover {
+            background: #b91c1c;
+        }
+
+        .btn-success {
+            background: #10b981;
+        }
+
+        .btn-success:hover {
+            background: #059669;
+        }
+    </style>
+</head>
+<body>
+    <div style="background: white; padding: 15px 30px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center;">
+        <h2 style="margin: 0; color: #1f2937; font-size: 24px;">🗓️ SchedulerGPT</h2>
+        <div style="display: flex; gap: 10px;">
+            <a href="/schedule-review-dashboard" style="padding: 8px 16px; background: #3b82f6; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">📅 Dashboard</a>
+            <a href="/analysis" style="padding: 8px 16px; background: #10b981; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">📊 Analysis</a>
+            <a href="/tech-manager" style="padding: 8px 16px; background: #f59e0b; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">👷 Technicians</a>
+            <a href="/data-manager" style="padding: 8px 16px; background: #6b7280; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">📁 Data</a>
+            <a href="/ai-scheduler" class="btn btn-primary">🤖 AI Scheduler</a>
+        </div>
+    </div>
+    <!-- Navigation Header -->
+    <div class="nav-header">
+        <h1>📊 Data Manager & Analysis</h1>
+        <div class="nav-buttons">
+            <a href="/scheduler-review" class="nav-btn">📅 Schedule Review</a>
+            
+        </div>
+    </div>
+
+    <!-- Data Manager Section (Collapsible) -->
+    <div class="collapsible-section" id="data-manager-section">
+        <div class="section-header" onclick="toggleSection('data-manager-section')">
+            <div class="section-title">
+                <span>🔧 Data Manager</span>
+                <span style="font-size: 14px; opacity: 0.9;">Upload, Add, Remove Jobs</span>
+            </div>
+            <span class="collapse-icon">▼</span>
+        </div>
+        <div class="section-content">
+            <!-- Upload Area -->
+            <div class="upload-area" onclick="document.getElementById('file-input').click()" 
+                 ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
+                <div>
+                    <div style="font-size: 48px;">📁</div>
+                    <h3>Drop Excel/CSV file here</h3>
+                    <p style="color: #6b7280; margin-top: 10px;">or click to browse</p>
+                    <input type="file" id="file-input" class="file-input" accept=".csv,.xlsx,.xls" onchange="handleFileSelect(event)">
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="quick-actions">
+                <div class="action-card">
+                    <div style="font-size: 32px;">➕</div>
+                    <h4>Add Single Job</h4>
+                    <p style="font-size: 12px; color: #6b7280;">Quick entry for 1-2 jobs</p>
+                    <button onclick="openAddJobModal()">Add Job</button>
+                </div>
+
+                <div class="action-card">
+                    <div style="font-size: 32px;">🔄</div>
+                    <h4>Process Staging</h4>
+                    <p style="font-size: 12px; color: #6b7280;"><span id="staging-count">0</span> jobs ready</p>
+                    <button onclick="processStaging()">Process Now</button>
+                </div>
+
+                <div class="action-card">
+                    <div style="font-size: 32px;">🧮</div>
+                    <h4>Recalculate</h4>
+                    <p style="font-size: 12px; color: #6b7280;">Update eligibility</p>
+                    <button onclick="recalculateEligibility()">Calculate</button>
+                </div>
+                
+                <div class="action-card" style="grid-column: span 2;">
+                    <div style="font-size: 32px;">📋</div>
+                    <h4>View Job Pool</h4>
+                    <p style="font-size: 12px; color: #6b7280;">View and edit all jobs</p>
+                    <button onclick="openJobPoolModal()" style="padding: 12px 24px; font-size: 16px;">View Jobs</button>
+                </div>
+            </div>
+
+            <!-- Validation Messages -->
+            <div class="validation-container" id="validation-messages" style="display: none;">
+                <!-- Validation messages will appear here -->
+            </div>
+
+            <!-- Processing Progress -->
+            <div id="progress-section" style="display: none;">
+                <h4>Processing Jobs...</h4>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress-fill"></div>
+                </div>
+                <p id="progress-text" style="text-align: center; color: #6b7280;">Initializing...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Database Status Section (Collapsible) -->
+    <div class="collapsible-section collapsed" id="status-section">
+        <div class="section-header" onclick="toggleSection('status-section')">
+            <div class="section-title">
+                <span>📈 Database Status</span>
+                <span style="font-size: 14px; opacity: 0.9;">Current counts and health</span>
+            </div>
+            <span class="collapse-icon">▼</span>
+        </div>
+        <div class="section-content">
+            <div class="status-grid">
+                <div class="status-card">
+                    <div class="status-number" id="total-jobs">0</div>
+                    <div class="status-label">Total Jobs</div>
+                </div>
+                <div class="status-card">
+                    <div class="status-number" id="unscheduled-jobs">0</div>
+                    <div class="status-label">Unscheduled</div>
+                </div>
+                <div class="status-card">
+                    <div class="status-number" id="scheduled-jobs">0</div>
+                    <div class="status-label">Scheduled</div>
+                </div>
+                <div class="status-card">
+                    <div class="status-number" id="overdue-jobs">0</div>
+                    <div class="status-label">Overdue</div>
+                </div>
+                <div class="status-card">
+                    <div class="status-number" id="active-techs">0</div>
+                    <div class="status-label">Active Techs</div>
+                </div>
+                <div class="status-card">
+                    <div class="status-number" id="problem-jobs">0</div>
+                    <div class="status-label">Problem Jobs</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Activity Section (Collapsible) -->
+    <div class="collapsible-section collapsed" id="activity-section">
+        <div class="section-header" onclick="toggleSection('activity-section')">
+            <div class="section-title">
+                <span>📜 Recent Activity</span>
+                <span style="font-size: 14px; opacity: 0.9;">Import history and changes</span>
+            </div>
+            <span class="collapse-icon">▼</span>
+        </div>
+        <div class="section-content">
+            <table class="job-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Action</th>
+                        <th>User</th>
+                        <th>Jobs Affected</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="activity-log">
+                    <!-- Activity rows will be populated here -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Add Job Modal -->
+    <div id="add-job-modal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <span class="close-modal" onclick="closeModal('add-job-modal')">&times;</span>
+            <h2>Add New Job</h2>
+            <form id="add-job-form" style="margin-top: 20px;">
+                <div style="display: grid; gap: 15px;">
+                    <!-- Required Fields -->
+                    <div>
+                        <label style="display: block; margin-bottom: 5px;">Work Order # *</label>
+                        <input type="number" id="new-work-order" style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 4px;" required>
+                    </div>
+                    
+                    <div>
+                        <label style="display: block; margin-bottom: 5px;">Site ID *</label>
+                        <input type="number" id="new-site-id" style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 4px;" required onblur="loadSiteDetails()">
+                        <small style="color: #6b7280;">Enter Site ID to auto-fill location</small>
+                    </div>
+                    
+                    <div>
+                        <label style="display: block; margin-bottom: 5px;">Due Date *</label>
+                        <input type="date" id="new-due-date" style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 4px;" required>
+                    </div>
+                    
+                    <div>
+                        <label style="display: block; margin-bottom: 5px;">SOW/Test Type *</label>
+                        <select id="new-sow-1" style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 4px;" required>
+                            <option value="">Select...</option>
+                            <option value="OandM">O&M - Monthly</option>
+                            <option value="Annual">Annual Test</option>
+                            <option value="LD Test">Line/Leak Detector Test</option>
+                            <option value="Hydro Test">Hydro Test</option>
+                            <option value="Sump Test">Sump Sensor Test</option>
+                            <option value="Stage II">Stage II Test</option>
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label style="display: block; margin-bottom: 5px;">Duration (hours) *</label>
+                        <input type="number" id="new-duration" step="0.5" value="2.0" style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 4px;" required>
+                    </div>
+                    
+                    <!-- Auto-filled Fields -->
+                    <fieldset style="border: 1px solid #e5e7eb; padding: 15px; border-radius: 4px;">
+                        <legend style="color: #6b7280;">Location (auto-filled from Site ID)</legend>
+                        
+                        <div style="display: grid; gap: 10px;">
+                            <div>
+                                <label style="display: block; margin-bottom: 5px;">Site Name</label>
+                                <input type="text" id="new-site-name" style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 4px; background: #f9fafb;" readonly>
+                            </div>
+                            
+                            <div>
+                                <label style="display: block; margin-bottom: 5px;">Address</label>
+                                <input type="text" id="new-site-address" style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 4px; background: #f9fafb;" readonly>
+                            </div>
+                            
+                            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px;">
+                                <div>
+                                    <label style="display: block; margin-bottom: 5px;">City</label>
+                                    <input type="text" id="new-city" style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 4px; background: #f9fafb;" readonly>
+                                </div>
+                                <div>
+                                    <label style="display: block; margin-bottom: 5px;">State</label>
+                                    <input type="text" id="new-state" style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 4px; background: #f9fafb;" readonly>
+                                </div>
+                            </div>
+                            
+                            <div>
+                                <label style="display: block; margin-bottom: 5px;">GPS Coordinates</label>
+                                <input type="text" id="new-gps" style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 4px; background: #f9fafb;" readonly placeholder="Lat, Long">
+                            </div>
+                        </div>
+                    </fieldset>
+                    
+                    <div>
+                        <label style="margin-right: 10px;">
+                            <input type="checkbox" id="new-night-test"> Night Job?
+                        </label>
+                    </div>
+                    
+                    <div>
+                        <label style="display: block; margin-bottom: 5px;">Priority</label>
+                        <select id="new-priority" style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 4px;">
+                            <option value="Normal">Normal</option>
+                            <option value="High">High</option>
+                            <option value="Urgent">Urgent</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 20px; text-align: right;">
+                    <button type="button" onclick="closeModal('add-job-modal')" style="padding: 10px 20px; margin-right: 10px;">Cancel</button>
+                    <button type="submit" class="btn-primary">Add Job</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <!-- Remove Job Modal -->
+    <div id="remove-job-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Remove/Archive Job</h2>
+                <span class="close" onclick="document.getElementById('remove-job-modal').style.display='none'">&times;</span>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="remove-work-order" placeholder="Enter Work Order Number">
+                <button onclick="searchJobToRemove()" style="margin-left: 10px;">Search</button>
+                
+                <div id="job-search-result" style="margin-top: 20px; display: none;">
+                    <!-- Job details will show here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Job Pool Viewer Modal -->
+    <div id="job-pool-modal" class="modal">
+        <div class="modal-content" style="max-width: 90%; width: 1200px;">
+            <div class="modal-header">
+                <h2>Job Pool Manager</h2>
+                <span class="close" onclick="document.getElementById('job-pool-modal').style.display='none'">&times;</span>
+            </div>
+            <div class="modal-body">
+                <!-- DATE RANGE FILTER - ADD THIS -->
+                <div style="display: flex; gap: 15px; margin-bottom: 20px; align-items: center;">
+                    <div>
+                        <label>Start Date:</label>
+                        <input type="date" id="filter-start-date" style="margin-left: 5px;">
+                    </div>
+                    <div>
+                        <label>End Date:</label>
+                        <input type="date" id="filter-end-date" style="margin-left: 5px;">
+                    </div>
+                    <button onclick="loadJobPool()" style="padding: 8px 16px;">Filter Jobs</button>
+                    <span id="job-count-display" style="color: #6b7280; margin-left: 10px;"></span>
+                </div>
+                <!-- EXISTING SEARCH INPUT STAYS -->
+                <input type="text" id="job-search" placeholder="Search by work order, site name, or city" style="width: 300px; margin-bottom: 20px;" onkeyup="filterJobPool()">
+                <div style="max-height: 500px; overflow-y: auto;">
+                    <table class="job-table">
+                        <thead>
+                            <tr>
+                                <th>Work Order</th>
+                                <th>Site Name</th>
+                                <th>City</th>
+                                <th>State</th>
+                                <th>Due Date</th>
+                                <th>SOW</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="job-pool-table-body">
+                            <!-- Jobs will be loaded here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        // API Base URL - adjust for your setup
+        const API_BASE = 'http://localhost:8000';
+
+        // Toggle collapsible sections
+        function toggleSection(sectionId) {
+            const section = document.getElementById(sectionId);
+            section.classList.toggle('collapsed');
+        }
+
+        // File handling
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                uploadFile(file);
+            }
+        }
+
+        function handleDrop(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            const uploadArea = document.querySelector('.upload-area');
+            uploadArea.classList.remove('dragging');
+            
+            const file = event.dataTransfer.files[0];
+            if (file) {
+                uploadFile(file);
+            }
+        }
+
+        function handleDragOver(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            const uploadArea = document.querySelector('.upload-area');
+            uploadArea.classList.add('dragging');
+        }
+
+        function handleDragLeave(event) {
+            event.preventDefault();
+            const uploadArea = document.querySelector('.upload-area');
+            uploadArea.classList.remove('dragging');
+        }
+
+        async function uploadFile(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+
+            // Show progress
+            document.getElementById('progress-section').style.display = 'block';
+            document.getElementById('progress-text').textContent = 'Uploading file...';
+            updateProgress(10);
+
+            try {
+                const response = await fetch(`${API_BASE}/api/upload-jobs`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) throw new Error('Upload failed');
+
+                const result = await response.json();
+                
+                updateProgress(30);
+                document.getElementById('progress-text').textContent = 'Validating data...';
+                
+                // Show validation results
+                showValidationResults(result.validation);
+                
+                updateProgress(60);
+                document.getElementById('progress-text').textContent = 'Moving to staging...';
+                
+                // Update staging count
+                document.getElementById('staging-count').textContent = result.jobs_count;
+                
+                updateProgress(100);
+                document.getElementById('progress-text').textContent = 'Upload complete!';
+                
+                setTimeout(() => {
+                    document.getElementById('progress-section').style.display = 'none';
+                }, 2000);
+                
+            } catch (error) {
+                console.error('Upload error:', error);
+                showValidationMessage('Upload failed: ' + error.message, 'error');
+                document.getElementById('progress-section').style.display = 'none';
+            }
+        }
+
+        function updateProgress(percent) {
+            document.getElementById('progress-fill').style.width = percent + '%';
+        }
+
+        function showValidationResults(validation) {
+            const container = document.getElementById('validation-messages');
+            container.innerHTML = '';
+            container.style.display = 'block';
+
+            if (validation.errors && validation.errors.length > 0) {
+                validation.errors.forEach(error => {
+                    showValidationMessage(error, 'error');
+                });
+            }
+
+            if (validation.warnings && validation.warnings.length > 0) {
+                validation.warnings.forEach(warning => {
+                    showValidationMessage(warning, 'warning');
+                });
+            }
+
+            if (validation.success) {
+                showValidationMessage(validation.success, 'success');
+            }
+        }
+
+        function showValidationMessage(message, type) {
+            const container = document.getElementById('validation-messages');
+            container.style.display = 'block';
+            
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `validation-message validation-${type}`;
+            
+            const icon = type === 'error' ? '❌' : type === 'warning' ? '⚠️' : '✅';
+            msgDiv.innerHTML = `<span>${icon}</span><span>${message}</span>`;
+            
+            container.appendChild(msgDiv);
+        }
+
+        async function processStaging() {
+            if (!confirm('Process all jobs in staging to production?')) return;
+
+            document.getElementById('progress-section').style.display = 'block';
+            document.getElementById('progress-text').textContent = 'Processing staging jobs...';
+            updateProgress(20);
+
+            try {
+                const response = await fetch(`${API_BASE}/api/process-staging`, {
+                    method: 'POST'
+                });
+
+                if (!response.ok) throw new Error('Processing failed');
+
+                const result = await response.json();
+                
+                updateProgress(100);
+                document.getElementById('progress-text').textContent = `Processed ${result.jobs_processed} jobs successfully!`;
+                
+                // Update counts
+                document.getElementById('staging-count').textContent = '0';
+                loadDatabaseStatus();
+                
+                setTimeout(() => {
+                    document.getElementById('progress-section').style.display = 'none';
+                }, 2000);
+                
+            } catch (error) {
+                console.error('Processing error:', error);
+                showValidationMessage('Processing failed: ' + error.message, 'error');
+                document.getElementById('progress-section').style.display = 'none';
+            }
+        }
+
+        async function recalculateEligibility() {
+            if (!confirm('Recalculate tech eligibility for all jobs?')) return;
+
+            document.getElementById('progress-section').style.display = 'block';
+            document.getElementById('progress-text').textContent = 'Calculating eligibility...';
+            updateProgress(50);
+
+            try {
+                const response = await fetch(`${API_BASE}/api/recalculate-eligibility`, {
+                    method: 'POST'
+                });
+
+                if (!response.ok) throw new Error('Calculation failed');
+
+                const result = await response.json();
+                
+                updateProgress(100);
+                document.getElementById('progress-text').textContent = 'Eligibility updated!';
+                
+                showValidationMessage(`Updated ${result.jobs_updated} jobs, ${result.eligibility_records} eligibility records created`, 'success');
+                
+                setTimeout(() => {
+                    document.getElementById('progress-section').style.display = 'none';
+                }, 2000);
+                
+            } catch (error) {
+                console.error('Calculation error:', error);
+                showValidationMessage('Calculation failed: ' + error.message, 'error');
+                document.getElementById('progress-section').style.display = 'none';
+            }
+        }
+
+        // Modal functions
+        function openAddJobModal() {
+            document.getElementById('add-job-modal').style.display = 'block';
+        }
+
+        function openRemoveJobsModal() {
+            document.getElementById('remove-job-modal').style.display = 'block';
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+        }
+
+        // Load database status
+        async function loadDatabaseStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/api/database-status`);
+                if (!response.ok) {
+                    console.error('Failed to load database status');
+                    return;
+                }
+                
+                const status = await response.json();
+                
+                document.getElementById('total-jobs').textContent = status.total_jobs || 0;
+                document.getElementById('unscheduled-jobs').textContent = status.unscheduled_jobs || 0;
+                document.getElementById('scheduled-jobs').textContent = status.scheduled_jobs || 0;
+                document.getElementById('overdue-jobs').textContent = status.overdue_jobs || 0;
+                document.getElementById('active-techs').textContent = status.active_techs || 0;
+                document.getElementById('problem-jobs').textContent = status.problem_jobs || 0;
+                
+            } catch (error) {
+                console.error('Error loading status:', error);
+            }
+        }
+
+        // Add job form submission
+        document.getElementById('add-job-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const gpsValue = document.getElementById('new-gps').value;
+            const [lat, lng] = gpsValue ? gpsValue.split(',').map(v => v.trim()) : [null, null];
+            
+            const jobData = {
+                work_order: parseInt(document.getElementById('new-work-order').value),
+                site_id: parseInt(document.getElementById('new-site-id').value),
+                site_name: document.getElementById('new-site-name').value,
+                site_address: document.getElementById('new-site-address').value, 
+                site_city: document.getElementById('new-city').value,
+                site_state: document.getElementById('new-state').value,
+                due_date: document.getElementById('new-due-date').value,
+                sow_1: document.getElementById('new-sow-1').value,
+                est_hours: parseFloat(document.getElementById('new-duration').value),
+                night_test: document.getElementById('new-night-test').checked,
+                jp_priority: document.getElementById('new-priority').value,
+                jp_status: 'Call',
+                latitude: lat ? parseFloat(lat) : null,
+                longitude: lng ? parseFloat(lng) : null
+            };
+
+            try {
+                const response = await fetch(`${API_BASE}/api/add-single-job`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(jobData)
+                });
+
+                if (!response.ok) throw new Error('Failed to add job');
+
+                const result = await response.json();
+                showValidationMessage(`Job ${jobData.work_order} added successfully!`, 'success');
+                closeModal('add-job-modal');
+                loadDatabaseStatus();
+                
+            } catch (error) {
+                showValidationMessage('Failed to add job: ' + error.message, 'error');
+            }
+        });
+
+        // Initialize on page load
+        window.onload = () => {
+            loadDatabaseStatus();
+        };
+
+        // Add these new functions:
+        async function searchJobToRemove() {
+            const workOrder = document.getElementById('remove-work-order').value;
+            if (!workOrder) {
+                alert('Please enter a work order number');
+                return;
+            }
+            
+            try {
+                // Use your backend API to search for the job
+                const response = await fetch(`${API_BASE}/api/job/${workOrder}`);
+                
+                if (!response.ok) {
+                    throw new Error('Job not found');
+                }
+                
+                const job = await response.json();
+                const resultDiv = document.getElementById('job-search-result');
+                
+                resultDiv.innerHTML = `
+                    <div style="border: 1px solid #ddd; padding: 15px; border-radius: 8px;">
+                        <h4>Job Found: ${job.work_order}</h4>
+                        <p><strong>Site:</strong> ${job.site_name}</p>
+                        <p><strong>Location:</strong> ${job.site_city}, ${job.site_state}</p>
+                        <p><strong>Due Date:</strong> ${job.due_date || 'Not set'}</p>
+                        <p><strong>SOW:</strong> ${job.sow_1 || 'Not set'}</p>
+                        <div style="margin-top: 15px;">
+                            <label>Archive Reason:</label>
+                            <input type="text" id="archive-reason" placeholder="e.g., Client cancelled, Duplicate" style="width: 100%; margin: 10px 0;">
+                            <button onclick="archiveJob(${job.work_order})" style="background: #ef4444; color: white;">Archive This Job</button>
+                        </div>
+                    </div>
+                `;
+                resultDiv.style.display = 'block';
+            } catch (error) {
+                console.error('Error searching job:', error);
+                const resultDiv = document.getElementById('job-search-result');
+                resultDiv.innerHTML = '<div style="color: #ef4444;">No job found with that work order number.</div>';
+                resultDiv.style.display = 'block';
+            }
+        }
+
+        // Load site details when Site ID is entered
+        async function loadSiteDetails() {
+            const siteId = document.getElementById('new-site-id').value;
+            if (!siteId) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/site/${siteId}`);
+                if (response.ok) {
+                    const site = await response.json();
+                    document.getElementById('new-site-name').value = site.site_name || '';
+                    document.getElementById('new-site-address').value = site.site_address || '';
+                    document.getElementById('new-city').value = site.site_city || '';
+                    document.getElementById('new-state').value = site.site_state || '';
+                    
+                    // Set GPS if available
+                    if (site.latitude && site.longitude) {
+                        document.getElementById('new-gps').value = `${site.latitude}, ${site.longitude}`;
+                    }
+                    
+                    // Set default duration if available
+                    if (site.est_hours) {
+                        document.getElementById('new-duration').value = site.est_hours;
+                    }
+                } else {
+                    // Just clear the fields if site not found
+                    document.getElementById('new-site-name').value = '';
+                    document.getElementById('new-site-address').value = '';
+                    document.getElementById('new-city').value = '';
+                    document.getElementById('new-state').value = '';
+                    document.getElementById('new-gps').value = '';
+                }
+            } catch (error) {
+                console.error('Error loading site:', error);
+            }
+        }
+        async function archiveJob(workOrder, fromModal = false) {
+            // Get reason - either from input field or prompt
+            let reason;
+            if (document.getElementById('archive-reason')) {
+                reason = document.getElementById('archive-reason').value;
+            }
+            if (!reason) {
+                reason = prompt('Archive reason (e.g., Client cancelled, Duplicate):');
+            }
+            if (!reason) return;
+            
+            if (!confirm(`Archive job ${workOrder}?`)) return;
+            
+            try {
+                // Use the existing remove-jobs endpoint that works
+                const response = await fetch(`${API_BASE}/api/remove-jobs`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        work_orders: [workOrder],
+                        reason: reason
+                    })
+                });
+                
+                if (!response.ok) throw new Error('Failed to archive job');
+                
+                alert('Job archived successfully!');
+                
+                // Refresh appropriate view
+                if (fromModal) {
+                    loadJobPool(); // Refresh the table
+                } else {
+                    document.getElementById('remove-job-modal').style.display = 'none';
+                    document.getElementById('remove-work-order').value = '';
+                    document.getElementById('job-search-result').style.display = 'none';
+                }
+                
+                loadDatabaseStatus();
+                logActivity('Job Archived', `WO: ${workOrder}`, 'Success');
+                
+            } catch (error) {
+                console.error('Error archiving job:', error);
+                alert('Error archiving job');
+            }
+        }
+
+        function removeJobFromPool(workOrder) {
+            archiveJob(workOrder, true);
+        }
+        // Job Pool Viewer Functions
+        async function openJobPoolModal() {
+            // Set default dates to current month
+            const now = new Date();
+            const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+            const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+            
+            document.getElementById('filter-start-date').value = firstDay.toISOString().split('T')[0];
+            document.getElementById('filter-end-date').value = lastDay.toISOString().split('T')[0];
+            
+            document.getElementById('job-pool-modal').style.display = 'block';
+            await loadJobPool();
+        }
+
+        async function loadJobPool() {
+            try {
+                const startDate = document.getElementById('filter-start-date').value;
+                const endDate = document.getElementById('filter-end-date').value;
+                
+                let url = `${API_BASE}/api/jobs/all`;
+                if (startDate && endDate) {
+                    url += `?due_date_start=${startDate}&due_date_end=${endDate}`;
+                }
+                
+                const response = await fetch(url);
+                const jobs = await response.json();
+                const tbody = document.getElementById('job-pool-table-body');
+                
+                // Update count display
+                document.getElementById('job-count-display').textContent = `${jobs.length} jobs loaded`;
+                
+                tbody.innerHTML = jobs.map(job => `
+                    <tr>
+                        <td>${job.work_order}</td>
+                        <td><input type="text" value="${job.site_name || ''}" onchange="updateJob(${job.work_order}, 'site_name', this.value)"></td>
+                        <td><input type="text" value="${job.site_city || ''}" onchange="updateJob(${job.work_order}, 'site_city', this.value)"></td>
+                        <td><input type="text" value="${job.site_state || ''}" onchange="updateJob(${job.work_order}, 'site_state', this.value)" style="width: 50px;"></td>
+                        <td><input type="date" value="${job.due_date || ''}" onchange="updateJob(${job.work_order}, 'due_date', this.value)"></td>
+                        <td><input type="text" value="${job.sow_1 || ''}" onchange="updateJob(${job.work_order}, 'sow_1', this.value)"></td>
+                        <td>${job.jp_status || 'Call'}</td>
+                        <td><button onclick="archiveJob(${job.work_order}, true)" style="background: #ef4444; color: white; padding: 2px 8px;">Archive</button></td>
+                    </tr>
+                `).join('');
+            } catch (error) {
+                console.error('Error loading job pool:', error);
+            }
+        }
+
+        // Update job field
+        async function updateJob(workOrder, field, value) {
+            try {
+                const response = await fetch(`${API_BASE}/api/job/update`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        work_order: workOrder,
+                        field: field,
+                        value: value
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to update job');
+                }
+                
+                logActivity('Job Updated', `WO: ${workOrder}, Field: ${field}`, 'Success');
+            } catch (error) {
+                console.error('Error updating job:', error);
+                alert('Error updating job');
+            }
+        }
+
+        function filterJobPool() {
+            const searchTerm = document.getElementById('job-search').value.toLowerCase();
+            const rows = document.querySelectorAll('#job-pool-table-body tr');
+            
+            rows.forEach(row => {
+                const text = row.textContent.toLowerCase();
+                row.style.display = text.includes(searchTerm) ? '' : 'none';
+            });
+        }
+
+    // Activity logging function
+        function logActivity(action, details, status) {
+            const activities = JSON.parse(localStorage.getItem('dataManagerActivities') || '[]');
+            activities.unshift({
+                date: new Date().toISOString(),
+                action: action,
+                user: 'Current User',
+                details: details,
+                status: status
+            });
+            
+            if (activities.length > 50) {
+                activities.pop();
+            }
+            
+            localStorage.setItem('dataManagerActivities', JSON.stringify(activities));
+            displayRecentActivity();
+        }
+
+        // Display recent activity
+        function displayRecentActivity() {
+            const activities = JSON.parse(localStorage.getItem('dataManagerActivities') || '[]');
+            const tbody = document.getElementById('activity-log');
+            
+            tbody.innerHTML = activities.slice(0, 10).map(activity => `
+                <tr>
+                    <td>${new Date(activity.date).toLocaleDateString()}</td>
+                    <td>${activity.action}</td>
+                    <td>${activity.user}</td>
+                    <td>${activity.details}</td>
+                    <td><span class="status-badge" style="background: ${activity.status === 'Success' ? '#10b981' : '#ef4444'}">${activity.status}</span></td>
+                </tr>
+            `).join('');
+        }   
+        document.addEventListener('DOMContentLoaded', function() {
+            loadDatabaseStatus();
+            displayRecentActivity();
+        }); 
+    </script>
+</body>
+</html>

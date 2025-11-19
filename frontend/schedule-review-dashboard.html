@@ -22,7 +22,7 @@
             height: 100vh;
             display: flex;
             flex-direction: column;
-            overflow: hidden;
+            overflow-y: auto;
         }
         
         /* HEADER */
@@ -74,30 +74,35 @@
             flex: 1;
             display: flex;
             flex-direction: column;
-            overflow: hidden;
+            overflow-y: auto;
         }
         
         /* DETAIL PANEL */
         .detail-panel {
             background: white;
-            border-bottom: 1px solid #e5e7eb;
-            min-height: 120px;
-            max-height: 200px;
-            overflow-y: auto;
-            transition: all 0.3s;
+            border-top: 1px solid #e5e7eb;
+            min-height: 0px;
+            max-height: 0px;
+            overflow: hidden;
+            transition: all 0.3s ease;
         }
-        
+
         .detail-panel.empty {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #9ca3af;
-            font-style: italic;
+            /* Stays collapsed when empty */
+            min-height: 0px;
+            max-height: 0px;
         }
-        
+
+        .detail-panel.active {
+            min-height: 200px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
         .detail-content {
             padding: 1rem;
         }
+
         
         .detail-header {
             display: flex;
@@ -248,12 +253,51 @@
             font-weight: 600;
         }
         
+        .hotel-info {
+            font-size: 0.7rem;
+            color: #f59e0b;
+            margin-top: 2px;
+            font-weight: 500;
+        }
         .unavailable {
             background: #f3f4f6;
             color: #9ca3af;
             font-style: italic;
         }
-        
+         /* Exploding head animation */
+        .exploding-head {
+            display: inline-block;
+            font-size: 16px;
+            animation: explode 0.8s ease-in-out infinite;
+        }
+
+        @keyframes explode {
+            0% { 
+                transform: scale(0.8) rotate(-5deg); 
+                opacity: 0.7; 
+            }
+            50% { 
+                transform: scale(1.3) rotate(5deg); 
+                opacity: 1; 
+                filter: brightness(1.5);
+            }
+            100% { 
+                transform: scale(0.8) rotate(-5deg); 
+                opacity: 0.7; 
+            }
+        }
+
+        /* Success checkmark pulse */
+        .success-check {
+            display: inline-block;
+            animation: successPulse 0.5s ease-out;
+        }
+
+        @keyframes successPulse {
+            0% { transform: scale(0.5); opacity: 0; }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); opacity: 1; }
+        }
         /* FILTER BAR */
         .filter-bar {
             background: white;
@@ -361,25 +405,43 @@
         }
     </style>
 </head>
+    <!-- Your existing head content -->
+    
+    <!-- Add Flatpickr -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <body>
+    <div style="background: white; padding: 15px 30px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center;">
+        <h2 style="margin: 0; color: #1f2937; font-size: 24px;">🗓️ SchedulerGPT</h2>
+        <div style="display: flex; gap: 10px;">
+            <a href="/schedule-review-dashboard" style="padding: 8px 16px; background: #3b82f6; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">📅 Dashboard</a>
+            <a href="/analysis" style="padding: 8px 16px; background: #10b981; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">📊 Analysis</a>
+            <a href="/tech-manager" style="padding: 8px 16px; background: #f59e0b; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">👷 Technicians</a>
+            <a href="/ai-scheduler" class="btn btn-primary">🤖 AI Scheduler</a>
+            <a href="/data-manager" style="padding: 8px 16px; background: #6b7280; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">📁 Data</a>
+        </div>
+    </div>
     <!-- HEADER -->
     <header class="header">
         <h1>📊 Schedule Review Dashboard</h1>
+        <button onclick="toggleOptimization()" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer;">
+            🔧 Optimize
+        </button>
+        <button class="btn btn-success" onclick="exportScheduleCSV()">Export Schedule CSV</button>
         <div class="week-nav">
             <button onclick="changeWeek(-1)">←</button>
             <span id="week-display">Loading...</span>
             <button onclick="changeWeek(1)">→</button>
+            <button id="jump-to-date" style="margin-left: 10px; padding: 0.5rem 1rem; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                📅 Jump to Date
+            </button>
         </div>
+
     </header>
     
-    <!-- MAIN CONTAINER -->
+        <!-- MAIN CONTAINER -->
     <div class="main-container">
-        <!-- DETAIL PANEL -->
-        <div class="detail-panel empty" id="detail-panel">
-            <div>Click any job cell to view and edit details</div>
-        </div>
-        
-        <!-- SCHEDULE GRID -->
+        <!-- SCHEDULE GRID FIRST -->
         <div class="schedule-container">
             <table class="schedule-grid" id="schedule-grid">
                 <thead>
@@ -400,6 +462,11 @@
             </table>
         </div>
         
+        <!-- DETAIL PANEL SECOND (BELOW CALENDAR) -->
+        <div class="detail-panel empty" id="detail-panel">
+            <div>Click any job cell to view and edit details</div>
+        </div>
+        
         <!-- FILTER BAR -->
         <div class="filter-bar">
             <span class="filter-label">Unscheduled Jobs Due Between:</span>
@@ -407,8 +474,75 @@
             <span>and</span>
             <input type="date" id="filter-end" class="date-input">
             <span class="job-count-badge" id="unscheduled-count">0 jobs</span>
+            <label style="margin-left: auto;">
+                <input type="checkbox" id="show-unscheduled" checked> 
+                Show unscheduled jobs
+            </label>
         </div>
-        
+        <!-- OPTIMIZATION PANEL -->
+        <div class="optimization-panel" id="optimization-panel" style="margin: 1rem; display: none;">
+            <div style="background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 1rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h3 style="font-weight: 600;">🔧 Schedule Optimization</h3>
+                    <button onclick="toggleOptimization()" style="padding: 0.25rem 0.5rem; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer;">Close</button>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 1rem;">
+                    <!-- Urgent Job Input -->
+                    <div style="border-right: 1px solid #e5e7eb; padding-right: 1rem;">
+                        <h4 style="margin-bottom: 0.5rem; font-size: 0.875rem;">Add Urgent Job</h4>
+                        
+                        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                            <input type="text" id="urgent-site" placeholder="Site Name" style="padding: 0.375rem; border: 1px solid #d1d5db; border-radius: 4px;">
+                            <input type="text" id="urgent-city" placeholder="City" style="padding: 0.375rem; border: 1px solid #d1d5db; border-radius: 4px;">
+                            <select id="urgent-state" style="padding: 0.375rem; border: 1px solid #d1d5db; border-radius: 4px;">
+                                <option value="CO">CO</option>
+                                <option value="WY">WY</option>
+                                <option value="UT">UT</option>
+                                <option value="NE">NE</option>
+                                <option value="KS">KS</option>
+                            </select>
+                            <input type="number" id="urgent-duration" placeholder="Duration (hours)" step="0.5" value="2" style="padding: 0.375rem; border: 1px solid #d1d5db; border-radius: 4px;">
+                            <select id="urgent-quals" style="padding: 0.375rem; border: 1px solid #d1d5db; border-radius: 4px;">
+                                <option value="">Basic - No special quals</option>
+                                <option value="PDT">PDT</option>
+                                <option value="PVCT">PVCT</option>
+                                <option value="VLT">VLT</option>
+                                <option value="SCT">SCT</option>
+                                <option value="NT">NT</option>
+                                <option value="LDT">LDT</option>
+                                <option value="CPS">CPS</option>
+                                <option value="ACI">ACI</option>
+                                <option value="ATG">ATG</option>
+                                <option value="DWP">DWP</option>
+                                <option value="MOI">MOI</option>
+                                <option value="OFV">OFV</option>
+                                <option value="SBT">SBT</option>
+                                <option value="SVT">SVT</option>
+                                <option value="Tracer">Tracer</option>
+                                <option value="TT">TT</option>
+                            </select>
+                            <input type="date" id="urgent-date" style="padding: 0.375rem; border: 1px solid #d1d5db; border-radius: 4px;">
+                            <button onclick="findUrgentOptions()" style="padding: 0.5rem; background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer;">Find Options</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Options Display -->
+                    <div>
+                        <h4 style="margin-bottom: 0.5rem; font-size: 0.875rem;">Scheduling Options</h4>
+                        <div id="optimization-results" style="max-height: 300px; overflow-y: auto;">
+                            <p style="color: #6b7280;">Enter urgent job details to see options...</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Route Optimization Check -->
+                <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e5e7eb;">
+                    <button onclick="analyzeCurrentRoutes()" style="padding: 0.5rem 1rem; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer;">Analyze Current Week Routes</button>
+                    <div id="route-analysis" style="margin-top: 1rem;"></div>
+                </div>
+            </div>
+        </div>
         <!-- MAP -->
         <div class="map-container">
             <div id="map"></div>
@@ -533,27 +667,44 @@
             renderScheduleGrid();
             updateMapMarkers();
         }
-        
+
         async function loadUnscheduledJobs() {
             const startDate = document.getElementById('filter-start').value;
             const endDate = document.getElementById('filter-end').value;
             
-            const response = await fetch('/api/jobs/unscheduled', {
-                headers: { 'X-API-Key': API_KEY }
-            });
+            const badge = document.getElementById('unscheduled-count');
             
-            const data = await response.json();
-            const allJobs = data.jobs || data || [];
+            // EXPLODING HEAD LOADING 🤯
+            badge.innerHTML = '<span class="exploding-head">🤯</span> Loading...';
+            badge.style.background = '#f59e0b';
             
-            // Filter by date range
-            unscheduledJobs = allJobs.filter(job => {
-                if (!job.due_date) return false;
-                return job.due_date >= startDate && job.due_date <= endDate;
-            });
-            
-            document.getElementById('unscheduled-count').textContent = `${unscheduledJobs.length} jobs`;
-            
-            updateMapMarkers();
+            try {
+                // ← CHANGED: Pass dates to API instead of filtering in browser
+                const url = `/api/jobs/unscheduled?start_date=${startDate}&end_date=${endDate}`;
+                console.log('🔍 Calling API with URL:', url);  // Debug line
+                const response = await fetch(url, {
+                    headers: { 'X-API-Key': API_KEY }
+                });
+                
+                const data = await response.json();
+                unscheduledJobs = data.jobs || [];  // ← No more filtering needed!
+                
+                // SUCCESS ✅
+                badge.innerHTML = '<span class="success-check">✅</span> Loaded!';
+                badge.style.background = '#10b981';
+                
+                updateMapMarkers();
+                
+                setTimeout(() => {
+                    badge.textContent = `${unscheduledJobs.length} jobs`;
+                    badge.style.background = '#dc2626';
+                }, 800);
+                
+            } catch (error) {
+                console.error('Failed to load unscheduled jobs:', error);
+                badge.innerHTML = '<span class="exploding-head">💥</span> Error!';
+                badge.style.background = '#ef4444';
+            }
         }
         
         // ============================================================================
@@ -614,12 +765,19 @@
                     if (jobs.length > 0) {
                         const totalWork = jobs.reduce((sum, job) => sum + (job.duration || 0), 0);
                         const totalDrive = jobs.reduce((sum, job) => sum + (job.drive_time || 0), 0);
+                        const initialDrive = jobs.reduce((sum, job) => sum + (job.initial_drive_hours || 0), 0);
+                        const hasHotel = jobs.some(job => job.needs_hotel);
+                        const hotelLocation = jobs.find(job => job.hotel_location)?.hotel_location;
                         
                         cell.innerHTML = `
-                            <div class="job-count">${jobs.length} job${jobs.length > 1 ? 's' : ''}</div>
-                            <div class="hours-info ${totalWork + totalDrive > 10 ? 'over-capacity' : ''}">
-                                ${totalWork.toFixed(1)}h + ${totalDrive.toFixed(1)}h drive
+                            <div class="job-count">
+                                ${jobs.length} job${jobs.length > 1 ? 's' : ''}
+                                ${hasHotel ? ' 🏨' : ''}
                             </div>
+                            <div class="hours-info ${totalWork + totalDrive + initialDrive > 10 ? 'over-capacity' : ''}">
+                                ${initialDrive > 0 ? `${initialDrive.toFixed(1)}h start + ` : ''}${totalWork.toFixed(1)}h work${totalDrive > 0 ? ` + ${totalDrive.toFixed(1)}h drive` : ''}
+                            </div>
+                            ${hasHotel ? `<div style="font-size: 0.7rem; color: #f59e0b; margin-top: 2px;">Hotel: ${hotelLocation}</div>` : ''}
                         `;
                         
                         cell.onclick = () => showDayDetails(tech, day, jobs);
@@ -647,9 +805,14 @@
             // Update detail panel
             const panel = document.getElementById('detail-panel');
             panel.classList.remove('empty');
+            panel.classList.add('active');
             
             const date = new Date(currentWeek);
             date.setDate(date.getDate() + ['mon', 'tue', 'wed', 'thu', 'fri'].indexOf(day));
+            
+            // Get available techs and days for move dropdown
+            const availableTechs = technicians.filter(t => t.active);
+            const weekDays = getWeekDays();
             
             panel.innerHTML = `
                 <div class="detail-content">
@@ -663,20 +826,35 @@
                                 <th>WO</th>
                                 <th>Site</th>
                                 <th>Location</th>
+                                <th>SOW</th>
                                 <th>Hours</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             ${jobs.map(job => `
-                                <tr>
+                                <tr id="job-row-${job.work_order}">
                                     <td>${job.work_order}</td>
                                     <td>${job.site_name || ''}</td>
                                     <td>${job.site_city || ''}, ${job.site_state || ''}</td>
+                                    <td>${job.sow_1 || 'N/A'}</td>
                                     <td>${job.duration || 0}h</td>
                                     <td class="job-actions">
-                                        <button onclick="moveJob(${job.work_order})">Move</button>
-                                        <button onclick="removeJob(${job.work_order})">Remove</button>
+                                        <div id="action-buttons-${job.work_order}">
+                                            <button onclick="showMoveForm(${job.work_order})">Move</button>
+                                            <button onclick="removeJob(${job.work_order})">Remove</button>
+                                        </div>
+                                        <div id="move-form-${job.work_order}" style="display: none;">
+                                            <select id="move-tech-${job.work_order}" style="font-size: 0.75rem; padding: 0.25rem;">
+                                                <option value="">Select Tech...</option>
+                                                ${availableTechs.map(t => 
+                                                    `<option value="${t.id}" ${t.id === tech.id ? 'selected' : ''}>${t.name}</option>`
+                                                ).join('')}
+                                            <Select>
+                                            <input type="date" id="move-day-${job.work_order}" value="${date.toISOString().split('T')[0]}" style="font-size: 0.75rem; padding: 0.25rem;">
+                                            <button onclick="confirmMove(${job.work_order})" style="background: #10b981;">✓</button>
+                                            <button onclick="cancelMove(${job.work_order})" style="background: #ef4444;">✗</button>
+                                        </div>
                                     </td>
                                 </tr>
                             `).join('')}
@@ -688,6 +866,7 @@
         
         function closeDetails() {
             const panel = document.getElementById('detail-panel');
+            panel.classList.remove('active');
             panel.classList.add('empty');
             panel.innerHTML = '<div>Click any job cell to view and edit details</div>';
             
@@ -695,7 +874,71 @@
                 cell.classList.remove('selected');
             });
         }
-        
+                function showMoveForm(workOrder) {
+            // Hide action buttons, show move form
+            document.getElementById(`action-buttons-${workOrder}`).style.display = 'none';
+            document.getElementById(`move-form-${workOrder}`).style.display = 'flex';
+        }
+
+        function cancelMove(workOrder) {
+            // Hide move form, show action buttons
+            document.getElementById(`move-form-${workOrder}`).style.display = 'none';
+            document.getElementById(`action-buttons-${workOrder}`).style.display = 'block';
+        }
+
+        async function confirmMove(workOrder) {
+            const techSelect = document.getElementById(`move-tech-${workOrder}`);
+            const daySelect = document.getElementById(`move-day-${workOrder}`);
+            
+            const newTechId = parseInt(techSelect.value);
+            const newDate = daySelect.value;
+            
+            if (!newTechId || !newDate) {
+                alert('Please select both technician and day');
+                return;
+            }
+            
+            try {
+                // First remove from current schedule
+                const removeResponse = await fetch(`/api/schedule/remove/${workOrder}`, {
+                    method: 'DELETE',
+                    headers: { 'X-API-Key': API_KEY }
+                });
+                
+                if (!removeResponse.ok) {
+                    throw new Error('Failed to remove job from current schedule');
+                }
+                
+                // Then assign to new tech/day
+                const assignResponse = await fetch('/api/schedule/assign', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-Key': API_KEY
+                    },
+                    body: JSON.stringify({
+                        work_order: workOrder,
+                        technician_id: newTechId,
+                        date: newDate
+                    })
+                });
+                
+                const result = await assignResponse.json();
+                
+                if (result.success) {
+                    await loadWeekSchedule();
+                    closeDetails();
+                    alert('Job moved successfully');
+                } else {
+                    throw new Error(result.errors ? result.errors[0] : 'Failed to assign job');
+                }
+            } catch (error) {
+                console.error('Error moving job:', error);
+                alert('Error moving job: ' + error.message);
+            }
+        }
+
+
         // ============================================================================
         // MAP FUNCTIONS
         // ============================================================================
@@ -764,6 +1007,14 @@
             let jobsWithCoords = 0;
             let jobsWithoutCoords = 0;
             
+            document.getElementById('show-unscheduled').addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    jobMarkers.forEach(marker => marker.addTo(map));
+                } else {
+                    jobMarkers.forEach(marker => map.removeLayer(marker));
+                }
+            });
+
             // Add unscheduled job markers
             unscheduledJobs.forEach(job => {
                 const coords = getJobCoordinates(job);
@@ -906,12 +1157,7 @@
                                 `<option value="${tech.id}">${tech.name}</option>`
                             ).join('')}
                         </select>
-                        <select id="popup-day-${job.work_order}">
-                            <option value="">Select Day...</option>
-                            ${weekDays.map(day => 
-                                `<option value="${day.date}">${day.label}</option>`
-                            ).join('')}
-                        </select>
+                        <input type="date" id="popup-day-${job.work_order}" style="padding: 0.375rem; border: 1px solid #d1d5db; border-radius: 4px;">
                         <button class="assign-btn" onclick="assignJobFromMap(${job.work_order})">
                             Assign Job
                         </button>
@@ -997,6 +1243,144 @@
                 alert('Failed to remove job');
             }
         }
+
+        // OPTIMIZATION FUNCTIONS
+        function toggleOptimization() {
+            const panel = document.getElementById('optimization-panel');
+            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        }
+
+        async function findUrgentOptions() {
+            const site = document.getElementById('urgent-site').value;
+            const city = document.getElementById('urgent-city').value;
+            const state = document.getElementById('urgent-state').value;
+            const duration = parseFloat(document.getElementById('urgent-duration').value);
+            const quals = document.getElementById('urgent-quals').value;
+            const date = document.getElementById('urgent-date').value;
+            
+            if (!site || !city || !date) {
+                alert('Please fill in all required fields');
+                return;
+            }
+            
+            // Find qualified techs
+            let qualifiedTechs = technicians.filter(tech => {
+                if (!tech.active) return false;
+                if (quals && !tech.qualified_tests?.includes(quals)) return false;
+                return true;
+            });
+            
+            const results = document.getElementById('optimization-results');
+            results.innerHTML = '<p>Analyzing schedule...</p>';
+            
+            // Check each tech's schedule
+            let options = [];
+            
+            for (let tech of qualifiedTechs) {
+                // Get tech's jobs for that day
+                const techJobs = scheduledJobs.filter(j => 
+                    j.technician_id === tech.technician_id && 
+                    j.date === date
+                );
+                
+                // Calculate current hours
+                const currentHours = techJobs.reduce((sum, j) => sum + (j.duration || 2), 0);
+                
+                if (currentHours + duration <= 10) { // Daily max
+                    // Check if jobs can be moved
+                    const moveableJobs = techJobs.filter(j => !j.is_recurring_site);
+                    
+                    options.push({
+                        tech_id: tech.technician_id,
+                        tech_name: tech.name,
+                        current_jobs: techJobs.length,
+                        current_hours: currentHours,
+                        available_hours: 10 - currentHours,
+                        moveable_jobs: moveableJobs.length,
+                        impact: techJobs.length > 0 ? 'Medium' : 'Low'
+                    });
+                }
+            }
+            
+            // Sort by impact
+            options.sort((a, b) => a.current_jobs - b.current_jobs);
+            
+            // Display top 5
+            if (options.length === 0) {
+                results.innerHTML = '<p style="color: #ef4444;">No qualified technicians available</p>';
+            } else {
+                results.innerHTML = options.slice(0, 5).map((opt, i) => `
+                    <div style="padding: 0.5rem; border: 1px solid #e5e7eb; border-radius: 4px; margin-bottom: 0.5rem;">
+                        <div style="display: flex; justify-content: space-between;">
+                            <strong>Option ${i+1}: ${opt.tech_name}</strong>
+                            <span style="color: ${opt.impact === 'Low' ? '#10b981' : '#f59e0b'};">${opt.impact} Impact</span>
+                        </div>
+                        <div style="font-size: 0.75rem; color: #6b7280; margin-top: 0.25rem;">
+                            Current: ${opt.current_jobs} jobs, ${opt.current_hours} hrs
+                            | Available: ${opt.available_hours} hrs
+                            ${opt.moveable_jobs > 0 ? `| ${opt.moveable_jobs} jobs can be moved` : ''}
+                        </div>
+                        <button onclick="applyUrgentJob(${opt.tech_id}, '${date}')" 
+                                style="margin-top: 0.5rem; padding: 0.25rem 0.5rem; background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.75rem;">
+                            Apply
+                        </button>
+                    </div>
+                `).join('');
+            }
+        }
+
+        async function analyzeCurrentRoutes() {
+            const results = document.getElementById('route-analysis');
+            results.innerHTML = '<p>Analyzing routes...</p>';
+            
+            // Group jobs by date and region
+            let analysis = [];
+            
+            const dates = [...new Set(scheduledJobs.map(j => j.date))].sort();
+            
+            for (let date of dates) {
+                const dayJobs = scheduledJobs.filter(j => j.date === date);
+                
+                // Check for techs in same area
+                const techsByCity = {};
+                dayJobs.forEach(job => {
+                    const key = `${job.site_city}-${job.site_state}`;
+                    if (!techsByCity[key]) techsByCity[key] = new Set();
+                    techsByCity[key].add(job.technician_id);
+                });
+                
+                // Find overlaps
+                const overlaps = Object.entries(techsByCity)
+                    .filter(([city, techs]) => techs.size > 1)
+                    .map(([city, techs]) => ({
+                        city,
+                        techs: Array.from(techs),
+                        potential_swap: true
+                    }));
+                
+                if (overlaps.length > 0) {
+                    analysis.push({ date, overlaps });
+                }
+            }
+            
+            if (analysis.length === 0) {
+                results.innerHTML = '<p style="color: #10b981;">✓ Routes look optimized!</p>';
+            } else {
+                results.innerHTML = '<div style="color: #f59e0b;">⚠️ Potential optimizations found:</div>' +
+                    analysis.map(a => `
+                        <div style="margin-top: 0.5rem; padding: 0.5rem; background: #fef3c7; border-radius: 4px;">
+                            <strong>${a.date}:</strong> Multiple techs in same area<br>
+                            ${a.overlaps.map(o => `${o.city}: Techs ${o.techs.join(', ')}`).join('<br>')}
+                        </div>
+                    `).join('');
+            }
+        }
+
+        function applyUrgentJob(techId, date) {
+            // This would call your API to actually schedule the job
+            alert(`Would schedule job with Tech ${techId} on ${date}`);
+            // Add actual API call here
+        }
         
         // ============================================================================
         // UTILITIES
@@ -1051,6 +1435,58 @@
         function setupEventHandlers() {
             document.getElementById('filter-start').addEventListener('change', loadUnscheduledJobs);
             document.getElementById('filter-end').addEventListener('change', loadUnscheduledJobs);
+        }
+        function exportScheduleCSV() {
+            const rows = [['WOID', 'UserID', 'IsPrimary', 'ScheduleDate']];
+            
+            // Assuming you have scheduled jobs data available
+            scheduledJobs.forEach(job => {
+                rows.push([
+                    job.work_order,
+                    job.technician_id,
+                    '1',
+                    job.date 
+                ]);
+            });
+            
+            const csvContent = rows.map(e => e.join(",")).join("\n");
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `schedule_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+        }
+        // Initialize date picker for jumping to specific dates
+        document.addEventListener('DOMContentLoaded', function() {
+            flatpickr("#jump-to-date", {
+                inline: false,
+                dateFormat: "Y-m-d",
+                onChange: function(selectedDates, dateStr, instance) {
+                    if (selectedDates.length > 0) {
+                        const selected = selectedDates[0];
+                        // Jump to the Monday of the selected week
+                        const monday = getMonday(selected);
+                        currentWeek = monday;
+                        updateWeekDisplay();
+                        loadWeekSchedule();
+                    }
+                },
+                onOpen: function(selectedDates, dateStr, instance) {
+                    // Highlight current week in the calendar
+                    if (currentWeek) {
+                        instance.setDate(currentWeek, false);
+                    }
+                }
+            });
+        });
+
+        // Helper function to get Monday of a week
+        function getMonday(date) {
+            const d = new Date(date);
+            const day = d.getDay();
+            const diff = d.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
+            return new Date(d.setDate(diff));
         }
     </script>
 </body>

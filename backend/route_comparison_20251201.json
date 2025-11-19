@@ -1,0 +1,135 @@
+{
+  "test_config": {
+    "tech_id": 416,
+    "region": "WY_West",
+    "test_date": "2025-12-01",
+    "start_location": [
+      41.69247951,
+      -109.2377996
+    ],
+    "max_daily_hours": 12,
+    "total_jobs_available": 16
+  },
+  "greedy": {
+    "metrics": {
+      "job_count": 6,
+      "work_hours": 9.0,
+      "drive_hours": 1.91,
+      "total_hours": 10.91,
+      "total_miles": 104.9,
+      "avg_job_distance": 17.5,
+      "backtracking_score": 0
+    },
+    "jobs": [
+      {
+        "work_order": 70256,
+        "site_name": "Maverik 5059",
+        "city": "Rock Springs",
+        "sow": "MOI",
+        "duration": 1.5,
+        "priority": "Monthly O&M"
+      },
+      {
+        "work_order": 70204,
+        "site_name": "Gasamat #206",
+        "city": "Rock Springs",
+        "sow": "MOI",
+        "duration": 1.5,
+        "priority": "Monthly O&M"
+      },
+      {
+        "work_order": 70511,
+        "site_name": "Fast Stop 1130",
+        "city": "Lyman",
+        "sow": "MOI",
+        "duration": 1.5,
+        "priority": "Monthly O&M"
+      },
+      {
+        "work_order": 70488,
+        "site_name": "Maverik 136",
+        "city": "Lyman",
+        "sow": "MOI",
+        "duration": 1.5,
+        "priority": "Monthly O&M"
+      },
+      {
+        "work_order": 70491,
+        "site_name": "Maverik 274",
+        "city": "Mountain View",
+        "sow": "MOI",
+        "duration": 1.5,
+        "priority": "Monthly O&M"
+      },
+      {
+        "work_order": 70684,
+        "site_name": "Fast Stop 1138",
+        "city": "Evanston",
+        "sow": "MOI",
+        "duration": 1.5,
+        "priority": "Monthly O&M"
+      }
+    ]
+  },
+  "ai_optimizer": {
+    "metrics": {
+      "job_count": 6,
+      "work_hours": 9.0,
+      "drive_hours": 1.91,
+      "total_hours": 10.91,
+      "total_miles": 104.9,
+      "avg_job_distance": 17.5,
+      "backtracking_score": 0
+    },
+    "jobs": [
+      {
+        "work_order": 70256,
+        "site_name": "Maverik 5059",
+        "city": "Rock Springs",
+        "sow": "MOI",
+        "duration": 1.5,
+        "priority": "Monthly O&M"
+      },
+      {
+        "work_order": 70204,
+        "site_name": "Gasamat #206",
+        "city": "Rock Springs",
+        "sow": "MOI",
+        "duration": 1.5,
+        "priority": "Monthly O&M"
+      },
+      {
+        "work_order": 70511,
+        "site_name": "Fast Stop 1130",
+        "city": "Lyman",
+        "sow": "MOI",
+        "duration": 1.5,
+        "priority": "Monthly O&M"
+      },
+      {
+        "work_order": 70488,
+        "site_name": "Maverik 136",
+        "city": "Lyman",
+        "sow": "MOI",
+        "duration": 1.5,
+        "priority": "Monthly O&M"
+      },
+      {
+        "work_order": 70491,
+        "site_name": "Maverik 274",
+        "city": "Mountain View",
+        "sow": "MOI",
+        "duration": 1.5,
+        "priority": "Monthly O&M"
+      },
+      {
+        "work_order": 70684,
+        "site_name": "Fast Stop 1138",
+        "city": "Evanston",
+        "sow": "MOI",
+        "duration": 1.5,
+        "priority": "Monthly O&M"
+      }
+    ]
+  }
+}

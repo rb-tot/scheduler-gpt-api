@@ -1,0 +1,59 @@
+DETAILED COLUMN USAGE REPORT
+================================================================================
+
+Files searched: 10
+Total columns: 30
+Used columns: 14
+Unused columns: 16
+
+UNUSED COLUMNS:
+  - cluster_id
+  - cluster_label
+  - created_at
+  - days_til_due
+  - flag_estimated_time
+  - flag_missing_due_date
+  - flag_past_due
+  - geom
+  - is_night
+  - is_recurring_site
+  - night_test
+  - site_address
+  - site_id
+  - tank_test_only
+  - updated_at
+  - zone_3
+
+
+DETAILED USAGE BY COLUMN:
+
+work_order:
+  ai-scheduler.html:843 - <strong>WO ${job.work_order}</strong>
+  data-manager.html:842 - work_order: document.getElementById('new-work-order').value,
+  data-manager.html:860 - showValidationMessage(`Job ${jobData.work_order} added successfully!`, 'success');
+  data-manager.html:895 - <h4>Job Found: ${job.work_order}</h4>
+  data-manager.html:903 - <button onclick="archiveJob(${job.work_order})" style="background: #ef4444; color: white;">Archive T
+  data-manager.html:934 - work_order: workOrder,
+  data-manager.html:973 - <td>${job.work_order}</td>
+  data-manager.html:974 - <td><input type="text" value="${job.site_name || ''}" onchange="updateJob(${job.work_order}, 'site_n
+  data-manager.html:975 - <td><input type="text" value="${job.site_city || ''}" onchange="updateJob(${job.work_order}, 'site_c
+  data-manager.html:976 - <td><input type="text" value="${job.site_state || ''}" onchange="updateJob(${job.work_order}, 'site_
+  data-manager.html:977 - <td><input type="date" value="${job.due_date || ''}" onchange="updateJob(${job.work_order}, 'due_dat
+  data-manager.html:978 - <td><input type="text" value="${job.sow_1 || ''}" onchange="updateJob(${job.work_order}, 'sow_1', th
+  data-manager.html:980 - <td><button onclick="removeJobFromPool(${job.work_order})" style="background: #ef4444; color: white;
+  data-manager.html:997 - work_order: workOrder,
+  index.html:657 - if (scheduledJobIds.has(job.work_order)) {
+  index.html:661 - const isEligible = !selectedTech || checkTechEligibility(selectedTech.technician_id, job.work_order)
+  index.html:671 - div.id = `job-${job.work_order}`;
+  index.html:680 - <strong>WO ${job.work_order}</strong> - ${job.est_hours || 2}h<br>
+  index.html:719 - if (scheduledJobIds.has(job.work_order)) return;
+  index.html:730 - WO: ${job.work_order}<br>
+  index.html:808 - if (scheduledJobIds.has(job.work_order)) {
+  index.html:824 - scheduledJobIds.add(job.work_order);
+  index.html:932 - WO ${job.work_order} - ${job.est_hours || 2}h
+  index.html:933 - <button class="remove-job" onclick="removeJob('${day}', ${index}, ${job.work_order})" title="Remove"
+  index.html:980 - const unscheduledJobs = jobs.filter(j => !scheduledJobIds.has(j.work_order));
+  index.html:1026 - const unscheduledJobs = jobs.filter(j => !scheduledJobIds.has(j.work_order));
+  index.html:1057 - if (!seen.has(s.job.work_order)) {
+  index.html:1058 - seen.add(s.job.work_order);
+  index.html:1075 - <strong>WO ${s.job.work_order}</strong> - ${s.job.site_name}<br>
