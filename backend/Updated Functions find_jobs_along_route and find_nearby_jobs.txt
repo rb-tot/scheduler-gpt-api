@@ -1,0 +1,167 @@
+CREATE OR REPLACE FUNCTION public.find_jobs_along_route(
+    start_lat double precision, 
+    start_lon double precision, 
+    end_lat double precision, 
+    end_lon double precision, 
+    corridor_miles double precision DEFAULT 10, 
+    max_results integer DEFAULT 20,
+    p_tech_id integer DEFAULT NULL,
+    p_schedule_date date DEFAULT NULL
+)
+RETURNS TABLE(
+    work_order bigint, 
+    site_name text, 
+    site_city text,
+    region text,
+    sow_1 text, 
+    distance_from_route_miles double precision,
+    distance_from_start_miles double precision,
+    due_date date, 
+    jp_priority text,
+    latitude double precision,
+    longitude double precision,
+    duration double precision,
+    night_test boolean
+)
+LANGUAGE plpgsql
+AS $function$
+DECLARE
+    month_start date;
+    month_end date;
+BEGIN
+    -- Calculate month boundaries from schedule date
+    IF p_schedule_date IS NOT NULL THEN
+        month_start := DATE_TRUNC('month', p_schedule_date)::date;
+        month_end := (DATE_TRUNC('month', p_schedule_date) + INTERVAL '1 month - 1 day')::date;
+    END IF;
+
+    RETURN QUERY
+    WITH route_line AS (
+        SELECT ST_MakeLine(
+            ST_SetSRID(ST_MakePoint(start_lon, start_lat), 4326),
+            ST_SetSRID(ST_MakePoint(end_lon, end_lat), 4326)
+        )::geography AS line
+    )
+    SELECT 
+        j.work_order,
+        j.site_name,
+        j.site_city,
+        j.region,
+        j.sow_1,
+        (ST_Distance(
+            ST_SetSRID(ST_MakePoint(j.longitude, j.latitude), 4326)::geography,
+            r.line
+        ) / 1609.34)::double precision AS distance_from_route_miles,
+        (ST_Distance(
+            ST_SetSRID(ST_MakePoint(j.longitude, j.latitude), 4326)::geography,
+            ST_SetSRID(ST_MakePoint(start_lon, start_lat), 4326)::geography
+        ) / 1609.34)::double precision AS distance_from_start_miles,
+        j.due_date,
+        j.jp_priority,
+        j.latitude,
+        j.longitude,
+        COALESCE(j.duration, 2.0)::double precision,
+        COALESCE(j.night_test, false)
+    FROM job_pool j
+    CROSS JOIN route_line r
+    INNER JOIN job_technician_eligibility jte 
+        ON j.work_order = jte.work_order
+    WHERE 
+        (p_tech_id IS NULL OR jte.technician_id = p_tech_id)
+        AND j.jp_status IN ('Call', 'Waiting to Schedule')
+        AND COALESCE(j.is_recurring_site, false) = false
+        -- Date filtering (only if schedule_date provided)
+        AND (p_schedule_date IS NULL OR (
+            j.due_date >= month_start 
+            AND j.due_date <= month_end
+        ))
+        AND ST_DWithin(
+            ST_SetSRID(ST_MakePoint(j.longitude, j.latitude), 4326)::geography,
+            r.line,
+            corridor_miles * 1609.34
+        )
+    ORDER BY distance_from_start_miles
+    LIMIT max_results;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.find_nearby_jobs(
+    center_lat double precision,
+    center_lon double precision,
+    radius_miles double precision DEFAULT 25,
+    max_results integer DEFAULT 20,
+    p_tech_id integer DEFAULT NULL,
+    p_schedule_date date DEFAULT NULL,
+    filter_region text DEFAULT NULL
+)
+RETURNS TABLE(
+    work_order bigint, 
+    site_name text, 
+    site_city text, 
+    region text, 
+    sow_1 text, 
+    distance_miles double precision, 
+    due_date date, 
+    days_til_due bigint, 
+    tech_count bigint,
+    latitude double precision,
+    longitude double precision,
+    duration double precision,
+    jp_priority text,
+    is_recurring_site boolean,
+    night_test boolean
+)
+LANGUAGE plpgsql
+AS $function$
+DECLARE
+    month_start date;
+    month_end date;
+BEGIN
+    -- Calculate month boundaries from schedule date
+    IF p_schedule_date IS NOT NULL THEN
+        month_start := DATE_TRUNC('month', p_schedule_date)::date;
+        month_end := (DATE_TRUNC('month', p_schedule_date) + INTERVAL '1 month - 1 day')::date;
+    END IF;
+
+    RETURN QUERY
+    SELECT 
+        j.work_order,
+        j.site_name,
+        j.site_city,
+        j.region,
+        j.sow_1,
+        (ST_Distance(
+            ST_SetSRID(ST_MakePoint(j.longitude, j.latitude), 4326)::geography,
+            ST_SetSRID(ST_MakePoint(center_lon, center_lat), 4326)::geography
+        ) / 1609.34)::double precision AS distance_miles,
+        j.due_date,
+        j.days_til_due,
+        j.tech_count,
+        j.latitude,
+        j.longitude,
+        COALESCE(j.duration, 2.0)::double precision,
+        j.jp_priority,
+        COALESCE(j.is_recurring_site, false),
+        COALESCE(j.night_test, false)
+    FROM job_pool j
+    INNER JOIN job_technician_eligibility jte 
+        ON j.work_order = jte.work_order
+    WHERE 
+        (p_tech_id IS NULL OR jte.technician_id = p_tech_id)
+        AND j.jp_status IN ('Call', 'Waiting to Schedule')
+        AND COALESCE(j.is_recurring_site, false) = false
+        AND (filter_region IS NULL OR j.region = filter_region)
+        -- Date filtering (only if schedule_date provided)
+        AND (p_schedule_date IS NULL OR (
+            j.due_date >= month_start 
+            AND j.due_date <= month_end
+        ))
+        AND ST_DWithin(
+            ST_SetSRID(ST_MakePoint(j.longitude, j.latitude), 4326)::geography,
+            ST_SetSRID(ST_MakePoint(center_lon, center_lat), 4326)::geography,
+            radius_miles * 1609.34
+        )
+    ORDER BY distance_miles
+    LIMIT max_results;
+END;
+$function$;

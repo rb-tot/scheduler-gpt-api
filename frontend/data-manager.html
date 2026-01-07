@@ -347,40 +347,34 @@
     </style>
 </head>
 <body>
-    <div style="background: white; padding: 15px 30px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center;">
-        <h2 style="margin: 0; color: #1f2937; font-size: 24px;">🗓️ SchedulerGPT</h2>
+    <div style="background: #1e3a5f; padding: 12px 30px; display: flex; justify-content: space-between; align-items: center;">
+        <h2 style="margin: 0; color: white; font-size: 20px;">SchedulerGPT</h2>
         <div style="display: flex; gap: 10px;">
-            <a href="/schedule-review-dashboard" style="padding: 8px 16px; background: #3b82f6; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">📅 Dashboard</a>
-            <a href="/analysis" style="padding: 8px 16px; background: #10b981; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">📊 Analysis</a>
-            <a href="/tech-manager" style="padding: 8px 16px; background: #f59e0b; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">👷 Technicians</a>
-            <a href="/data-manager" style="padding: 8px 16px; background: #6b7280; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">📁 Data</a>
-            <a href="/ai-scheduler" class="btn btn-primary">🤖 AI Scheduler</a>
+            <a href="/scheduler-helper" style="padding: 8px 16px; background: #3b82f6; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">Scheduler</a>
+            <a href="/analysis" style="padding: 8px 16px; background: #10b981; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">Analysis</a>
+            <a href="/tech-manager" style="padding: 8px 16px; background: #f59e0b; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">Technicians</a>
+            <a href="/data-manager" style="padding: 8px 16px; background: rgba(255,255,255,0.2); color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">Data Manager</a>
         </div>
     </div>
-    <!-- Navigation Header -->
     <div class="nav-header">
-        <h1>📊 Data Manager & Analysis</h1>
-        <div class="nav-buttons">
-            <a href="/scheduler-review" class="nav-btn">📅 Schedule Review</a>
-            
-        </div>
+        <h1>Data Manager</h1>
     </div>
 
     <!-- Data Manager Section (Collapsible) -->
     <div class="collapsible-section" id="data-manager-section">
         <div class="section-header" onclick="toggleSection('data-manager-section')">
             <div class="section-title">
-                <span>🔧 Data Manager</span>
+                <span>ðŸ”§ Data Manager</span>
                 <span style="font-size: 14px; opacity: 0.9;">Upload, Add, Remove Jobs</span>
             </div>
-            <span class="collapse-icon">▼</span>
+            <span class="collapse-icon">â–¼</span>
         </div>
         <div class="section-content">
             <!-- Upload Area -->
             <div class="upload-area" onclick="document.getElementById('file-input').click()" 
                  ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
                 <div>
-                    <div style="font-size: 48px;">📁</div>
+                    <div style="font-size: 48px;">ðŸ“</div>
                     <h3>Drop Excel/CSV file here</h3>
                     <p style="color: #6b7280; margin-top: 10px;">or click to browse</p>
                     <input type="file" id="file-input" class="file-input" accept=".csv,.xlsx,.xls" onchange="handleFileSelect(event)">
@@ -390,28 +384,28 @@
             <!-- Quick Actions -->
             <div class="quick-actions">
                 <div class="action-card">
-                    <div style="font-size: 32px;">➕</div>
+                    <div style="font-size: 32px;">âž•</div>
                     <h4>Add Single Job</h4>
                     <p style="font-size: 12px; color: #6b7280;">Quick entry for 1-2 jobs</p>
                     <button onclick="openAddJobModal()">Add Job</button>
                 </div>
 
                 <div class="action-card">
-                    <div style="font-size: 32px;">🔄</div>
+                    <div style="font-size: 32px;">ðŸ”„</div>
                     <h4>Process Staging</h4>
                     <p style="font-size: 12px; color: #6b7280;"><span id="staging-count">0</span> jobs ready</p>
                     <button onclick="processStaging()">Process Now</button>
                 </div>
 
                 <div class="action-card">
-                    <div style="font-size: 32px;">🧮</div>
+                    <div style="font-size: 32px;">ðŸ§®</div>
                     <h4>Recalculate</h4>
                     <p style="font-size: 12px; color: #6b7280;">Update eligibility</p>
                     <button onclick="recalculateEligibility()">Calculate</button>
                 </div>
                 
                 <div class="action-card" style="grid-column: span 2;">
-                    <div style="font-size: 32px;">📋</div>
+                    <div style="font-size: 32px;">ðŸ“‹</div>
                     <h4>View Job Pool</h4>
                     <p style="font-size: 12px; color: #6b7280;">View and edit all jobs</p>
                     <button onclick="openJobPoolModal()" style="padding: 12px 24px; font-size: 16px;">View Jobs</button>
@@ -438,10 +432,10 @@
     <div class="collapsible-section collapsed" id="status-section">
         <div class="section-header" onclick="toggleSection('status-section')">
             <div class="section-title">
-                <span>📈 Database Status</span>
+                <span>ðŸ“ˆ Database Status</span>
                 <span style="font-size: 14px; opacity: 0.9;">Current counts and health</span>
             </div>
-            <span class="collapse-icon">▼</span>
+            <span class="collapse-icon">â–¼</span>
         </div>
         <div class="section-content">
             <div class="status-grid">
@@ -477,10 +471,10 @@
     <div class="collapsible-section collapsed" id="activity-section">
         <div class="section-header" onclick="toggleSection('activity-section')">
             <div class="section-title">
-                <span>📜 Recent Activity</span>
+                <span>ðŸ“œ Recent Activity</span>
                 <span style="font-size: 14px; opacity: 0.9;">Import history and changes</span>
             </div>
-            <span class="collapse-icon">▼</span>
+            <span class="collapse-icon">â–¼</span>
         </div>
         <div class="section-content">
             <table class="job-table">
@@ -782,14 +776,19 @@
             const msgDiv = document.createElement('div');
             msgDiv.className = `validation-message validation-${type}`;
             
-            const icon = type === 'error' ? '❌' : type === 'warning' ? '⚠️' : '✅';
+            const icon = type === 'error' ? 'âŒ' : type === 'warning' ? 'âš ï¸' : 'âœ…';
             msgDiv.innerHTML = `<span>${icon}</span><span>${message}</span>`;
             
             container.appendChild(msgDiv);
         }
 
         async function processStaging() {
-            if (!confirm('Process all jobs in staging to production?')) return;
+            if (!confirm('Process all jobs in staging to production?\n\n' +
+                'â€¢ New jobs will be INSERTED\n' +
+                'â€¢ Existing non-scheduled jobs will be UPDATED\n' +
+                'â€¢ Scheduled jobs will be SKIPPED (preserved)')) {
+                return;
+            }
 
             document.getElementById('progress-section').style.display = 'block';
             document.getElementById('progress-text').textContent = 'Processing staging jobs...';
@@ -805,7 +804,43 @@
                 const result = await response.json();
                 
                 updateProgress(100);
-                document.getElementById('progress-text').textContent = `Processed ${result.jobs_processed} jobs successfully!`;
+                
+                if (result.success) {
+                    // Build detailed message
+                    let details = [];
+                    if (result.inserted > 0) details.push(`${result.inserted} inserted`);
+                    if (result.updated > 0) details.push(`${result.updated} updated`);
+                    if (result.skipped_scheduled > 0) details.push(`${result.skipped_scheduled} scheduled (preserved)`);
+                    if (result.errors > 0) details.push(`${result.errors} errors`);
+                    
+                    const detailText = details.length > 0 ? ` (${details.join(', ')})` : '';
+                    
+                    document.getElementById('progress-text').textContent = 
+                        `Processed ${result.jobs_processed || 0} jobs${detailText}`;
+                    
+                    // Show validation messages for each category
+                    const container = document.getElementById('validation-messages');
+                    container.innerHTML = '';
+                    container.style.display = 'block';
+                    
+                    if (result.inserted > 0) {
+                        showValidationMessage(`âœ… ${result.inserted} new jobs inserted`, 'success');
+                    }
+                    if (result.updated > 0) {
+                        showValidationMessage(`ðŸ”„ ${result.updated} existing jobs updated (sow_1, due_date, etc.)`, 'success');
+                    }
+                    if (result.skipped_scheduled > 0) {
+                        showValidationMessage(`â­ï¸ ${result.skipped_scheduled} scheduled jobs preserved (not modified)`, 'warning');
+                    }
+                    if (result.errors > 0) {
+                        showValidationMessage(`âŒ ${result.errors} jobs had errors`, 'error');
+                    }
+                    
+                    logActivity('Import Processed', result.message || 'Jobs processed', 'Success');
+                } else {
+                    document.getElementById('progress-text').textContent = 'Processing failed';
+                    showValidationMessage(result.message || result.error || 'Unknown error', 'error');
+                }
                 
                 // Update counts
                 document.getElementById('staging-count').textContent = '0';
@@ -813,7 +848,7 @@
                 
                 setTimeout(() => {
                     document.getElementById('progress-section').style.display = 'none';
-                }, 2000);
+                }, 3000);
                 
             } catch (error) {
                 console.error('Processing error:', error);
@@ -1169,6 +1204,19 @@
             displayRecentActivity();
         }
 
+         // Helper function to fix timezone issues with date display
+        function formatDateLocal(dateString) {
+            if (!dateString) return 'No date';
+            
+            const parts = dateString.split('-');
+            const year = parseInt(parts[0]);
+            const month = parseInt(parts[1]) - 1;
+            const day = parseInt(parts[2]);
+            
+            const date = new Date(year, month, day);
+            return date.toLocaleDateString();
+        }
+        
         // Display recent activity
         function displayRecentActivity() {
             const activities = JSON.parse(localStorage.getItem('dataManagerActivities') || '[]');
@@ -1176,7 +1224,7 @@
             
             tbody.innerHTML = activities.slice(0, 10).map(activity => `
                 <tr>
-                    <td>${new Date(activity.date).toLocaleDateString()}</td>
+                    <td>${formatDateLocal(activity.date)}</td>
                     <td>${activity.action}</td>
                     <td>${activity.user}</td>
                     <td>${activity.details}</td>

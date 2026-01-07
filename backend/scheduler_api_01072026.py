@@ -25,7 +25,7 @@ try:
     from db_queries import job_pool_df as _jp, technicians_df as _techs
     
 except ImportError:
-    print("Ã¢Å¡Â Ã¯Â¸Â  Missing dependencies - install: supabase, pandas")
+    print("âš ï¸  Missing dependencies - install: supabase, pandas")
 
 # ============================================================================
 # APP SETUP
@@ -145,7 +145,7 @@ def add_additional_tech(request: AddAdditionalTechRequest):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Ã¢ÂÅ’ Error adding additional tech: {e}")
+        print(f"âŒ Error adding additional tech: {e}")
         raise HTTPException(500, str(e))
 
 @app.delete("/api/scheduled-jobs/remove-additional-tech")
@@ -166,7 +166,7 @@ def remove_additional_tech(work_order: int, technician_id: int):
             "message": f"Removed tech {technician_id} from work order {work_order}"
         }
     except Exception as e:
-        print(f"Ã¢ÂÅ’ Error removing additional tech: {e}")
+        print(f"âŒ Error removing additional tech: {e}")
         raise HTTPException(500, str(e))
 
 @app.get("/api/scheduled-jobs/additional-techs")
@@ -227,7 +227,7 @@ def get_all_additional_techs(
             "additional_techs": result
         }
     except Exception as e:
-        print(f"Ã¢ÂÅ’ Error getting additional techs: {e}")
+        print(f"âŒ Error getting additional techs: {e}")
         return {
             "success": False,
             "additional_techs": [],
@@ -266,7 +266,7 @@ def get_additional_techs_for_job(work_order: int):
             "additional_techs": result
         }
     except Exception as e:
-        print(f"Ã¢ÂÅ’ Error getting additional techs for job: {e}")
+        print(f"âŒ Error getting additional techs for job: {e}")
         raise HTTPException(500, str(e))
 
 @app.get("/tech-manager", response_class=HTMLResponse)
@@ -309,31 +309,37 @@ def serve_data_manager():
         with open(html_path, "r", encoding="utf-8") as f:
             return f.read()
     raise HTTPException(404, "data-manager.html not found")
-
 @app.get("/schedule-review-dashboard", response_class=HTMLResponse)
-def serve_schedule_review_dashboard():
-    """Redirect old dashboard URL to scheduler-helper"""
-    from fastapi.responses import RedirectResponse
-    return RedirectResponse(url="/scheduler-helper")
 
-@app.get("/", response_class=HTMLResponse)
-def redirect_to_main():
-    """Redirect root to scheduler-helper (main page)"""
-    html_path = os.path.join(frontend_dir, "scheduler-helper.html")
+def serve_schedule_review_dashboard():
+    """Serve the schedule review dashboard page (MAIN PAGE)"""
+    html_path = os.path.join(frontend_dir, "schedule-review-dashboard.html")
     if os.path.exists(html_path):
         with open(html_path, "r", encoding="utf-8") as f:
             return f.read()
-    return {"message": "SchedulerGPT", "main_page": "/scheduler-helper"}
+    raise HTTPException(404, "schedule-review-dashboard.html not found")
+
+@app.get("/", response_class=HTMLResponse)
+def redirect_to_main():
+    """Redirect root to main dashboard"""
+    html_path = os.path.join(frontend_dir, "schedule-review-dashboard.html")
+    if os.path.exists(html_path):
+        with open(html_path, "r", encoding="utf-8") as f:
+            return f.read()
+    return {"message": "SchedulerGPT", "main_page": "/schedule-review-dashboard"}
 
 @app.get("/ai-scheduler", response_class=HTMLResponse)
 def serve_ai_scheduler():
-    """Redirect old AI scheduler URL to scheduler-helper"""
-    from fastapi.responses import RedirectResponse
-    return RedirectResponse(url="/scheduler-helper")
+    """Serve the AI scheduler page"""
+    html_path = os.path.join(frontend_dir, "ai-scheduler.html")
+    if os.path.exists(html_path):
+        with open(html_path, "r", encoding="utf-8") as f:
+            return f.read()
+    raise HTTPException(404, "ai-scheduler.html not found")
 
 @app.get("/scheduler-helper", response_class=HTMLResponse)
 def serve_scheduler_helper():
-    """Serve the scheduler helper page (MAIN PAGE)"""
+    """Serve the scheduler helper page"""
     html_path = os.path.join(frontend_dir, "scheduler-helper.html")
     if os.path.exists(html_path):
         with open(html_path, "r", encoding="utf-8") as f:
@@ -393,8 +399,8 @@ def get_unscheduled_jobs(
     """Get all unscheduled jobs with eligibility info"""
     
     from datetime import datetime, timedelta
-    # ADD THIS DEBUG BLOCK ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬Å“
-    print(f"\nÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â DEBUG get_unscheduled_jobs:")
+    # ADD THIS DEBUG BLOCK Ã¢â€ â€œ
+    print(f"\nÃ°Å¸â€Â DEBUG get_unscheduled_jobs:")
     print(f"  start_date received: {start_date}")
     print(f"  end_date received: {end_date}")
     
@@ -404,17 +410,17 @@ def get_unscheduled_jobs(
     # Add date filters if provided
     if start_date:
         filters.append(("due_date", "gte", start_date))
-        print(f"  ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Added start filter: due_date >= {start_date}")
+        print(f"  Ã¢Å“â€¦ Added start filter: due_date >= {start_date}")
     if end_date:
         # Use < next day instead of <= end day for reliable date filtering
         end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
         next_day = (end_date_obj + timedelta(days=1)).strftime("%Y-%m-%d")
         filters.append(("due_date", "lt", next_day))
-        print(f"  ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Added end filter: due_date < {next_day}")
+        print(f"  Ã¢Å“â€¦ Added end filter: due_date < {next_day}")
     print(f"  Final filters: {filters}")
     # Get jobs with filters - THIS MUST EXECUTE
     jobs = sb_select("job_pool", filters=filters)
-    print(f"  ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã…Â  Jobs returned: {len(jobs)}")  # ADD THIS TOO
+    print(f"  Ã°Å¸â€œÅ  Jobs returned: {len(jobs)}")  # ADD THIS TOO
     # Check if we got any jobs
     if not jobs:
         return {"count": 0, "jobs": [], "summary": {}}
@@ -424,10 +430,10 @@ def get_unscheduled_jobs(
         jobs = [j for j in jobs if j.get("site_state") == region]
     if priority:
         jobs = [j for j in jobs if j.get("jp_priority") == priority]
-    print(f"  ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã…Â  Jobs after region/priority filter: {len(jobs)}")
+    print(f"  Ã°Å¸â€œÅ  Jobs after region/priority filter: {len(jobs)}")
     # Apply limit
     jobs = jobs[:limit]
-    print(f"  ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã…Â  Jobs after limit ({limit}): {len(jobs)}")
+    print(f"  Ã°Å¸â€œÅ  Jobs after limit ({limit}): {len(jobs)}")
     # Add metadata
     for job in jobs:
         # Get eligible techs count
@@ -470,7 +476,7 @@ def get_unscheduled_jobs(
         # Count by urgency
         urg = job.get("urgency", "normal")
         summary["by_urgency"][urg] = summary["by_urgency"].get(urg, 0) + 1
-    print(f"  ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Returning {len(jobs)} jobs to frontend\n")
+    print(f"  Ã¢Å“â€¦ Returning {len(jobs)} jobs to frontend\n")
     return {
         "count": len(jobs),
         "jobs": jobs,
@@ -499,7 +505,7 @@ def generate_week_smart_schedule(
     
     
     """
-    ÃƒÂ°Ã…Â¸Ã¢â‚¬Â Ã¢â‚¬Â¢ SMART SCHEDULER - Geographic-First Approach
+    Ã°Å¸â€ â€¢ SMART SCHEDULER - Geographic-First Approach
     
     This endpoint:
     1. Analyzes regions for job distribution
@@ -979,7 +985,7 @@ def assign_single_job(req: AssignJobRequest):
     
     job = job[0]
     
-    # 2. Get technician details  ÃƒÂ¢Ã¢â‚¬Â Ã‚Â ADD THIS SECTION
+    # 2. Get technician details  Ã¢â€ Â ADD THIS SECTION
     tech_result = sb_select("technicians", filters=[("technician_id", "eq", req.technician_id)])
     if not tech_result:
         return {"success": False, "errors": [f"Technician {req.technician_id} not found"]}
@@ -1172,7 +1178,7 @@ def add_secondary_tech(req: AddSecondaryTechRequest):
             "secondary_tech_id": req.secondary_tech_id
         }
     except Exception as e:
-        print(f"âŒ Error adding secondary tech: {e}")
+        print(f"❌ Error adding secondary tech: {e}")
         return {"success": False, "error": str(e)}
 
 
@@ -1241,7 +1247,7 @@ def get_all_additional_techs(week_start: str = None):
         return {"success": True, "additional_techs": result}
         
     except Exception as e:
-        print(f"âŒ Error getting additional techs: {e}")
+        print(f"❌ Error getting additional techs: {e}")
         return {"success": False, "additional_techs": [], "error": str(e)}
 
 
@@ -1414,7 +1420,7 @@ def optimize_day_route(req: OptimizeDayRequest):
     tech = sb_select("technicians", filters=[("technician_id", "eq", req.technician_id)])[0]
     
     # Simple nearest-neighbor optimization
-    from scheduler_utils import haversine
+    from scheduler_V4a_fixed import haversine
     
     # Get job details with locations
     job_details = []
@@ -1501,10 +1507,10 @@ def bulk_assign_jobs(req: BulkAssignRequest):
                         date=due_date
                     ))
                     results["assigned"] += 1
-                    results["details"].append(f"ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ WO {job['work_order']} ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Tech {tech_id}")
+                    results["details"].append(f"Ã¢Å“â€œ WO {job['work_order']} Ã¢â€ â€™ Tech {tech_id}")
                 except Exception as e:
                     results["failed"] += 1
-                    results["details"].append(f"ÃƒÂ¢Ã…â€œÃ¢â‚¬â€ WO {job['work_order']}: {str(e)}")
+                    results["details"].append(f"Ã¢Å“â€” WO {job['work_order']}: {str(e)}")
     
     return results
 
@@ -1575,7 +1581,7 @@ def get_full_week_schedule(week_start: str):
                 
                 # Check if tech has home location
                 if tech_id not in tech_homes:
-                    print(f"ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Warning: Tech {tech_id} has no home location, using defaults")
+                    print(f"Ã¢Å¡Â Ã¯Â¸Â Warning: Tech {tech_id} has no home location, using defaults")
                     for job in daily_jobs:
                         job['initial_drive_hours'] = 0.5
                         job['drive_time'] = 0
@@ -1603,7 +1609,7 @@ def get_full_week_schedule(week_start: str):
                                     start_location[0], start_location[1],
                                     job['latitude'], job['longitude']
                                 )
-                                job['initial_drive_hours'] = initial_distance / 45
+                                job['initial_drive_hours'] = initial_distance / 55
                             except Exception:
                                 job['initial_drive_hours'] = 0.5
                         else:
@@ -1621,7 +1627,7 @@ def get_full_week_schedule(week_start: str):
                                     job['latitude'], job['longitude'],
                                     next_job['latitude'], next_job['longitude']
                                 )
-                                job['drive_time'] = distance / 45
+                                job['drive_time'] = distance / 55
                             except Exception:
                                 job['drive_time'] = 0.5
                         else:
@@ -1699,7 +1705,7 @@ def get_full_week_schedule(week_start: str):
         
     except Exception as e:
         import traceback
-        print(f"ÃƒÂ¢Ã‚ÂÃ…â€™ Error in get_full_week_schedule: {str(e)}")
+        print(f"Ã¢ÂÅ’ Error in get_full_week_schedule: {str(e)}")
         print(traceback.format_exc())
         raise HTTPException(500, f"Failed to load week: {str(e)}")
 
@@ -1784,7 +1790,7 @@ def monthly_analysis(year: int, month: int):
         # Estimate drive time by region
         # Simple estimation: 30 miles average between jobs in same region
         # Plus distance from nearest tech home to region center
-        AVG_SPEED = 45  # mph (conservative for mountain/rural roads)
+        AVG_SPEED = 55  # mph
         AVG_INTRA_REGION_DISTANCE = 30  # miles between jobs in same region
         
         total_drive_hours = 0
@@ -1795,7 +1801,7 @@ def monthly_analysis(year: int, month: int):
             work_hours = stats['work_hours']
             
             # Estimate drive time for this region
-            # Formula: (jobs - 1) ÃƒÆ’Ã¢â‚¬â€ avg_distance_between_jobs + 2 ÃƒÆ’Ã¢â‚¬â€ home_to_region
+            # Formula: (jobs - 1) Ãƒâ€” avg_distance_between_jobs + 2 Ãƒâ€” home_to_region
             if job_count > 0:
                 # Intra-region driving (between jobs)
                 intra_region_miles = (job_count - 1) * AVG_INTRA_REGION_DISTANCE if job_count > 1 else 0
@@ -2037,7 +2043,7 @@ async def upload_jobs(file: UploadFile = File(...)):
             except UnicodeDecodeError:
                 pass
             
-            # Method 2: Try Latin-1 (handles Spanish characters like ÃƒÂ±)
+            # Method 2: Try Latin-1 (handles Spanish characters like Ã±)
             if df is None:
                 try:
                     df = pd.read_csv(io.BytesIO(contents), encoding='latin-1')
@@ -2826,7 +2832,7 @@ def recalculate_eligibility_for_tech(tech_id: int):
     if eligible_jobs:
         sb_insert("job_technician_eligibility", eligible_jobs)
     
-    print(f"ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Recalculated eligibility for Tech {tech_id}: {len(eligible_jobs)} eligible jobs")
+    print(f"Ã¢Å“â€¦ Recalculated eligibility for Tech {tech_id}: {len(eligible_jobs)} eligible jobs")
 
 # ============================================================================
 # TIME OFF MANAGEMENT

@@ -28,9 +28,16 @@ function showLoading() {
 
 async function runAnalysis() {
     const monthSelect = document.getElementById('month-select');
-    const month = monthSelect.value;
-    const year = 2025;
+    const month = parseInt(monthSelect.value);
+    // Get year from data attribute (set by dynamic dropdown) or default to current year
+    const selectedOption = monthSelect.options[monthSelect.selectedIndex];
+    const year = parseInt(selectedOption.dataset.year) || new Date().getFullYear();
 
+    // DEBUG - check what we're sending
+    console.log('=== ANALYSIS DEBUG ===');
+    console.log('Month:', month, 'Year:', year);
+    console.log('API URL:', `${API_BASE}api/analysis/monthly?year=${year}&month=${month}`);
+    
     showLoading();
 
     try {
@@ -202,9 +209,7 @@ function displayResults(data) {
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
-    // Set default month to September 2025
-    const monthSelect = document.getElementById('month-select');
-    if (monthSelect) {
-        monthSelect.value = 9;
-    }
+    // Month is now set dynamically to current month by the HTML script
+    // Just run analysis automatically on page load
+    // runAnalysis();  // Uncomment to auto-run on page load
 });

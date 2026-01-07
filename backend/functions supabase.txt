@@ -1,0 +1,324 @@
+| routine_name             | routine_definition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| analyze_regions_for_tech | 
+BEGIN
+    RETURN QUERY
+    SELECT 
+        jp.region,
+        COUNT(jp.work_order)::bigint as job_count,
+        SUM(COALESCE(jp.duration, 2))::numeric as total_work_hours,
+        
+        -- Distance from tech home to region center (FIXED COLUMN NAMES)
+        (SELECT 
+            ROUND(
+                (3958.8 * acos(
+                    cos(radians(t.home_latitude)) * 
+                    cos(radians(r.center_latitude)) * 
+                    cos(radians(r.center_longitude) - radians(t.home_longitude)) + 
+                    sin(radians(t.home_latitude)) * 
+                    sin(radians(r.center_latitude))
+                ))::numeric, 1
+            )
+         FROM technicians t
+         CROSS JOIN regions r
+         WHERE t.technician_id = p_tech_id
+           AND r.region_name = jp.region
+         LIMIT 1
+        ) as distance_from_home,
+        
+        -- Hotel required if distance > 90 miles
+        (SELECT 
+            CASE WHEN 
+                (3958.8 * acos(
+                    cos(radians(t.home_latitude)) * 
+                    cos(radians(r.center_latitude)) * 
+                    cos(radians(r.center_longitude) - radians(t.home_longitude)) + 
+                    sin(radians(t.home_latitude)) * 
+                    sin(radians(r.center_latitude))
+                )) > 90 
+            THEN true ELSE false END
+         FROM technicians t
+         CROSS JOIN regions r
+         WHERE t.technician_id = p_tech_id
+           AND r.region_name = jp.region
+         LIMIT 1
+        ) as requires_hotel,
+        
+        -- Priority job count
+        COUNT(CASE 
+            WHEN jp.jp_priority IN ('NOV', 'Urgent', 'Monthly O&M') 
+            THEN 1 
+        END)::bigint as priority_job_count,
+        
+        -- Recurring site count
+        COUNT(CASE WHEN jp.is_recurring_site THEN 1 END)::bigint as recurring_count,
+        
+        -- Average days until due
+        AVG(jp.days_til_due)::numeric as avg_days_til_due
+        
+    FROM job_pool jp
+    INNER JOIN job_technician_eligibility jte 
+        ON jp.work_order = jte.work_order
+    WHERE jte.technician_id = p_tech_id
+      AND jp.due_date BETWEEN p_month_start AND p_month_end
+      AND jp.jp_status IN ('Call', 'Waiting to Schedule')
+      AND (p_sow_filter IS NULL OR jp.sow_1 = p_sow_filter)
+    GROUP BY jp.region
+    HAVING COUNT(jp.work_order) > 0
+    ORDER BY 
+        COUNT(CASE WHEN jp.jp_priority IN ('NOV', 'Urgent') THEN 1 END) DESC,
+        COUNT(jp.work_order) DESC;
+END;
+ |
+| get_all_jobs_in_region   | 
+BEGIN
+    RETURN QUERY
+    SELECT 
+        jp.work_order,
+        jp.site_id,
+        jp.site_name,
+        jp.site_city,
+        jp.latitude,
+        jp.longitude,
+        jp.sow_1,
+        jp.due_date,
+        jp.jp_priority,
+        jp.duration
+        COALESCE(jp.is_recurring_site, false) as is_recurring_site,
+        false as is_night,
+        COALESCE(jp.night_test, false) as night_test,
+        jp.days_til_due,
+        
+        -- Priority ranking
+        CASE 
+            WHEN jp.jp_priority = 'NOV' THEN 1
+            WHEN jp.jp_priority = 'Urgent' THEN 1
+            WHEN jp.jp_priority = 'Monthly O&M' THEN 2
+            WHEN jp.is_recurring_site THEN 2
+            WHEN jp.days_til_due <= 7 THEN 3
+            WHEN jp.days_til_due <= 14 THEN 4
+            ELSE 5
+        END as priority_rank,
+        
+        -- Distance from tech home (FIXED: cast to double precision)
+        (SELECT 
+            ROUND(
+                CAST(
+                    (3958.8 * acos(
+                        cos(radians(t.home_latitude)) * 
+                        cos(radians(jp.latitude)) * 
+                        cos(radians(jp.longitude) - radians(t.home_longitude)) + 
+                        sin(radians(t.home_latitude)) * 
+                        sin(radians(jp.latitude))
+                    )) AS numeric
+                ), 1
+            )::double precision
+         FROM technicians t
+         WHERE t.technician_id = p_tech_id
+        ) as distance_from_tech_home
+        
+    FROM job_pool jp
+    INNER JOIN job_technician_eligibility jte 
+        ON jp.work_order = jte.work_order
+    WHERE jte.technician_id = p_tech_id
+      AND jp.region = p_region_name
+      AND jp.due_date BETWEEN p_month_start AND p_month_end
+      AND jp.jp_status IN ('Call', 'Waiting to Schedule')
+      AND (p_sow_filter IS NULL OR jp.sow_1 = p_sow_filter)
+    ORDER BY 
+        priority_rank ASC,
+        jp.days_til_due ASC,
+        distance_from_tech_home ASC;
+END;
+     
+| routine_name           | routine_definition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| get_all_jobs_in_region | BEGIN
+    RETURN QUERY
+    SELECT 
+        jp.work_order,
+        jp.site_id,
+        jp.site_name,
+        jp.site_city,
+        jp.latitude,
+        jp.longitude,
+        jp.sow_1,
+        jp.due_date,
+        jp.jp_priority,
+        jp.
+        duration,
+        COALESCE(jp.is_recurring_site, false) as is_recurring_site,
+        false as is_night,
+        COALESCE(jp.night_test, false) as night_test,
+        jp.days_til_due,
+        
+        -- Priority ranking
+        CASE 
+            WHEN jp.jp_priority = 'NOV' THEN 1
+            WHEN jp.jp_priority = 'Urgent' THEN 1
+            WHEN jp.jp_priority = 'Monthly O&M' THEN 2
+            WHEN jp.is_recurring_site THEN 2
+            WHEN jp.days_til_due <= 7 THEN 3
+            WHEN jp.days_til_due <= 14 THEN 4
+            ELSE 5
+        END as priority_rank,
+        
+        -- Distance from tech home (FIXED: cast to double precision)
+        (SELECT 
+            ROUND(
+                CAST(
+                    (3958.8 * acos(
+                        cos(radians(t.home_latitude)) * 
+                        cos(radians(jp.latitude)) * 
+                        cos(radians(jp.longitude) - radians(t.home_longitude)) + 
+                        sin(radians(t.home_latitude)) * 
+                        sin(radians(jp.latitude))
+                    )) AS numeric
+                ), 1
+            )::double precision
+         FROM technicians t
+         WHERE t.technician_id = p_tech_id
+        ) as distance_from_tech_home
+        
+    FROM job_pool jp
+    INNER JOIN job_technician_eligibility jte 
+        ON jp.work_order = jte.work_order
+    WHERE jte.technician_id = p_tech_id
+      AND jp.region = p_region_name
+      AND jp.due_date BETWEEN p_month_start AND p_month_end
+      AND jp.jp_status IN ('Call', 'Waiting to Schedule')
+      AND (p_sow_filter IS NULL OR jp.sow_1 = p_sow_filter)
+    ORDER BY 
+        priority_rank ASC,
+        jp.days_til_due ASC,
+        distance_from_tech_home ASC;
+END; |     
+| routine_name             | routine_definition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| analyze_regions_for_tech | BEGIN
+    RETURN QUERY
+    SELECT 
+        jp.region,
+        COUNT(jp.work_order)::bigint as job_count,
+        SUM(COALESCE(jp.duration, 2))::numeric as total_work_hours,
+        
+        -- Distance from tech home to region center (FIXED COLUMN NAMES)
+        (SELECT 
+            ROUND(
+                (3958.8 * acos(
+                    cos(radians(t.home_latitude)) * 
+                    cos(radians(r.center_latitude)) * 
+                    cos(radians(r.center_longitude) - radians(t.home_longitude)) + 
+                    sin(radians(t.home_latitude)) * 
+                    sin(radians(r.center_latitude))
+                ))::numeric, 1
+            )
+         FROM technicians t
+         CROSS JOIN regions r
+         WHERE t.technician_id = p_tech_id
+           AND r.region_name = jp.region
+         LIMIT 1
+        ) as distance_from_home,
+        
+        -- Hotel required if distance > 90 miles
+        (SELECT 
+            CASE WHEN 
+                (3958.8 * acos(
+                    cos(radians(t.home_latitude)) * 
+                    cos(radians(r.center_latitude)) * 
+                    cos(radians(r.center_longitude) - radians(t.home_longitude)) + 
+                    sin(radians(t.home_latitude)) * 
+                    sin(radians(r.center_latitude))
+                )) > 90 
+            THEN true ELSE false END
+         FROM technicians t
+         CROSS JOIN regions r
+         WHERE t.technician_id = p_tech_id
+           AND r.region_name = jp.region
+         LIMIT 1
+        ) as requires_hotel,
+        
+        -- Priority job count
+        COUNT(CASE 
+            WHEN jp.jp_priority IN ('NOV', 'Urgent', 'Monthly O&M') 
+            THEN 1 
+        END)::bigint as priority_job_count,
+        
+        -- Recurring site count
+        COUNT(CASE WHEN jp.is_recurring_site THEN 1 END)::bigint as recurring_count,
+        
+        -- Average days until due
+        AVG(jp.days_til_due)::numeric as avg_days_til_due
+        
+    FROM job_pool jp
+    INNER JOIN job_technician_eligibility jte 
+        ON jp.work_order = jte.work_order
+    WHERE jte.technician_id = p_tech_id
+      AND jp.due_date BETWEEN p_month_start AND p_month_end
+      AND jp.jp_status IN ('Call', 'Waiting to Schedule')
+      AND (p_sow_filter IS NULL OR jp.sow_1 = p_sow_filter)
+    GROUP BY jp.region
+    HAVING COUNT(jp.work_order) > 0
+    ORDER BY 
+        COUNT(CASE WHEN jp.jp_priority IN ('NOV', 'Urgent') THEN 1 END) DESC,
+        COUNT(jp.work_order) DESC;
+END; |
+| get_all_jobs_in_region   | BEGIN
+    RETURN QUERY
+    SELECT 
+        jp.work_order,
+        jp.site_id,
+        jp.site_name,
+        jp.site_city,
+        jp.latitude,
+        jp.longitude,
+        jp.sow_1,
+        jp.due_date,
+        jp.jp_priority,
+        jp.duration, 
+        COALESCE(jp.is_recurring_site, false) as is_recurring_site,
+        false as is_night,
+        COALESCE(jp.night_test, false) as night_test,
+        jp.days_til_due,
+        
+        -- Priority ranking
+        CASE 
+            WHEN jp.jp_priority = 'NOV' THEN 1
+            WHEN jp.jp_priority = 'Urgent' THEN 1
+            WHEN jp.jp_priority = 'Monthly O&M' THEN 2
+            WHEN jp.is_recurring_site THEN 2
+            WHEN jp.days_til_due <= 7 THEN 3
+            WHEN jp.days_til_due <= 14 THEN 4
+            ELSE 5
+        END as priority_rank,
+        
+        -- Distance from tech home (FIXED: cast to double precision)
+        (SELECT 
+            ROUND(
+                CAST(
+                    (3958.8 * acos(
+                        cos(radians(t.home_latitude)) * 
+                        cos(radians(jp.latitude)) * 
+                        cos(radians(jp.longitude) - radians(t.home_longitude)) + 
+                        sin(radians(t.home_latitude)) * 
+                        sin(radians(jp.latitude))
+                    )) AS numeric
+                ), 1
+            )::double precision
+         FROM technicians t
+         WHERE t.technician_id = p_tech_id
+        ) as distance_from_tech_home
+        
+    FROM job_pool jp
+    INNER JOIN job_technician_eligibility jte 
+        ON jp.work_order = jte.work_order
+    WHERE jte.technician_id = p_tech_id
+      AND jp.region = p_region_name
+      AND jp.due_date BETWEEN p_month_start AND p_month_end
+      AND jp.jp_status IN ('Call', 'Waiting to Schedule')
+      AND (p_sow_filter IS NULL OR jp.sow_1 = p_sow_filter)
+    ORDER BY 
+        priority_rank ASC,
+        jp.days_til_due ASC,
+        distance_from_tech_home ASC;
+END;                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |

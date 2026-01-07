@@ -481,13 +481,14 @@
 </head>
 <body>
     <!-- Header -->
-    <div class="header">
-        <h1>👷 Technician Manager</h1>
-        <div class="nav-buttons">
-            <button class="btn btn-success" onclick="openAddTechModal()">➕ Add New Technician</button>
-            <a href="/schedule-review-dashboard" class="btn btn-primary">📅 Dashboard</a>
-            <a href="/analysis" class="btn btn-secondary">📊 Analysis</a>
-            <a href="/ai-scheduler" class="btn btn-primary">🤖 AI Scheduler</a>
+    <div style="background: #1e3a5f; padding: 12px 30px; display: flex; justify-content: space-between; align-items: center;">
+        <h2 style="margin: 0; color: white; font-size: 20px;">SchedulerGPT - Technician Manager</h2>
+        <div style="display: flex; gap: 10px; align-items: center;">
+            <button class="btn btn-success" onclick="openAddTechModal()">+ Add Technician</button>
+            <a href="/scheduler-helper" style="padding: 8px 16px; background: #3b82f6; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">Scheduler</a>
+            <a href="/analysis" style="padding: 8px 16px; background: #10b981; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">Analysis</a>
+            <a href="/tech-manager" style="padding: 8px 16px; background: rgba(255,255,255,0.2); color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">Technicians</a>
+            <a href="/data-manager" style="padding: 8px 16px; background: #6b7280; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">Data Manager</a>
         </div>
     </div>
 
@@ -537,13 +538,13 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h2 id="modal-title">Add New Technician</h2>
-                <button class="close-btn" onclick="closeTechModal()">×</button>
+                <button class="close-btn" onclick="closeTechModal()">Ã—</button>
             </div>
 
             <form id="tech-form" onsubmit="saveTechnician(event)">
                 <!-- Basic Info Section -->
                 <div class="form-section">
-                    <h3>📋 Basic Information</h3>
+                    <h3>ðŸ“‹ Basic Information</h3>
                     <div class="form-grid">
                         <div class="form-group">
                             <label for="tech-name">Full Name *</label>
@@ -570,12 +571,12 @@
 
                 <!-- Location Section -->
                 <div class="form-section">
-                    <h3>📍 Home Location</h3>
+                    <h3>ðŸ“ Home Location</h3>
                     <div class="form-group full-width">
                         <label>City and State *</label>
                         <div class="city-lookup">
                             <input type="text" id="home-location" required placeholder="Denver, CO">
-                            <button type="button" class="btn btn-primary" onclick="lookupCityCoords()">🔍 Lookup Coordinates</button>
+                            <button type="button" class="btn btn-primary" onclick="lookupCityCoords()">ðŸ” Lookup Coordinates</button>
                         </div>
                         <div id="coords-display" class="coords-display" style="display: none;">
                             <strong>Coordinates:</strong> <span id="coords-text"></span>
@@ -587,7 +588,7 @@
 
                 <!-- Qualifications Section -->
                 <div class="form-section">
-                    <h3>🎓 Qualifications (SOW Types)</h3>
+                    <h3>ðŸŽ“ Qualifications (SOW Types)</h3>
                     <div class="checkbox-group" id="qualifications-checkboxes">
                         <!-- Will be populated dynamically -->
                     </div>
@@ -595,7 +596,7 @@
 
                 <!-- States Section -->
                 <div class="form-section">
-                    <h3>🗺️ States Allowed</h3>
+                    <h3>ðŸ—ºï¸ States Allowed</h3>
                     <div class="state-selector" id="states-selector">
                         <!-- Will be populated dynamically -->
                     </div>
@@ -604,7 +605,7 @@
                 <!-- Form Actions -->
                 <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
                     <button type="button" class="btn btn-secondary" onclick="closeTechModal()">Cancel</button>
-                    <button type="submit" class="btn btn-success">💾 Save Technician</button>
+                    <button type="submit" class="btn btn-success">ðŸ’¾ Save Technician</button>
                 </div>
             </form>
         </div>
@@ -615,16 +616,16 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h2 id="timeoff-title">Manage Time Off</h2>
-                <button class="close-btn" onclick="closeTimeOffModal()">×</button>
+                <button class="close-btn" onclick="closeTimeOffModal()">Ã—</button>
             </div>
 
             <div class="calendar-controls">
                 <div class="month-nav">
-                    <button class="btn btn-secondary" onclick="changeMonth(-1)">◀ Prev</button>
+                    <button class="btn btn-secondary" onclick="changeMonth(-1)">â—€ Prev</button>
                     <h3 id="calendar-month-year">January 2025</h3>
-                    <button class="btn btn-secondary" onclick="changeMonth(1)">Next ▶</button>
+                    <button class="btn btn-secondary" onclick="changeMonth(1)">Next â–¶</button>
                 </div>
-                <button class="btn btn-primary" onclick="saveTimeOff()">💾 Save Changes</button>
+                <button class="btn btn-primary" onclick="saveTimeOff()">ðŸ’¾ Save Changes</button>
             </div>
 
             <div class="timeoff-calendar" id="timeoff-calendar">
@@ -644,7 +645,7 @@
     <!-- ADD THIS MAP SECTION -->
     <div class="container" style="margin-top: 20px;">
         <div class="header">
-            <h2>📍 Technician Service Areas (400-mile radius)</h2>
+            <h2>ðŸ“ Technician Service Areas (100-mile radius)</h2>
         </div>
         <div id="techMap" style="height: 500px; width: 100%; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);"></div>
     </div>
@@ -756,8 +757,8 @@
                     </td>
                     <td>
                         <div class="action-buttons">
-                            <button class="btn-small btn-edit" onclick='editTech(${JSON.stringify(tech)})'>✏️ Edit</button>
-                            <button class="btn-small btn-timeoff" onclick="openTimeOffModal(${tech.technician_id}, '${tech.name}')">📅 Time Off</button>
+                            <button class="btn-small btn-edit" onclick='editTech(${JSON.stringify(tech)})'>âœï¸ Edit</button>
+                            <button class="btn-small btn-timeoff" onclick="openTimeOffModal(${tech.technician_id}, '${tech.name}')">ðŸ“… Time Off</button>
                             <button class="btn-small btn-toggle" onclick="toggleActive(${tech.technician_id}, ${tech.active})">${tech.active ? 'Deactivate' : 'Activate'}</button>
                         </div>
                     </td>
@@ -1162,7 +1163,7 @@
             
             // Add map tiles
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '© OpenStreetMap contributors'
+                attribution: 'Â© OpenStreetMap contributors'
             }).addTo(map);
             
             // Colors for different technicians
@@ -1187,7 +1188,7 @@
                         color: color,
                         fillColor: color,
                         fillOpacity: 0.1,
-                        radius: 400 * 1609.34,
+                        radius: 100 * 1609.34,
                         weight: 2
                     }).addTo(map);
                 }

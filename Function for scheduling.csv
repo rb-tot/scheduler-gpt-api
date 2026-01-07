@@ -1,0 +1,287 @@
+function_name,full_definition
+analyze_regions_for_tech,"CREATE OR REPLACE FUNCTION public.analyze_regions_for_tech(p_tech_id integer, p_month_start date, p_month_end date, p_sow_filter text DEFAULT NULL::text)
+ RETURNS TABLE(region_name text, job_count bigint, total_work_hours numeric, distance_from_home numeric, requires_hotel boolean, priority_job_count bigint, recurring_count bigint, avg_days_til_due numeric)
+ LANGUAGE plpgsql
+AS $function$BEGIN
+    RETURN QUERY
+    SELECT 
+        jp.region,
+        COUNT(jp.work_order)::bigint as job_count,
+        SUM(COALESCE(jp.duration, 2))::numeric as total_work_hours,
+        
+        -- Distance from tech home to region center (FIXED COLUMN NAMES)
+        (SELECT 
+            ROUND(
+                (3958.8 * acos(
+                    cos(radians(t.home_latitude)) * 
+                    cos(radians(r.center_latitude)) * 
+                    cos(radians(r.center_longitude) - radians(t.home_longitude)) + 
+                    sin(radians(t.home_latitude)) * 
+                    sin(radians(r.center_latitude))
+                ))::numeric, 1
+            )
+         FROM technicians t
+         CROSS JOIN regions r
+         WHERE t.technician_id = p_tech_id
+           AND r.region_name = jp.region
+         LIMIT 1
+        ) as distance_from_home,
+        
+        -- Hotel required if distance > 90 miles
+        (SELECT 
+            CASE WHEN 
+                (3958.8 * acos(
+                    cos(radians(t.home_latitude)) * 
+                    cos(radians(r.center_latitude)) * 
+                    cos(radians(r.center_longitude) - radians(t.home_longitude)) + 
+                    sin(radians(t.home_latitude)) * 
+                    sin(radians(r.center_latitude))
+                )) > 90 
+            THEN true ELSE false END
+         FROM technicians t
+         CROSS JOIN regions r
+         WHERE t.technician_id = p_tech_id
+           AND r.region_name = jp.region
+         LIMIT 1
+        ) as requires_hotel,
+        
+        -- Priority job count
+        COUNT(CASE 
+            WHEN jp.jp_priority IN ('NOV', 'Urgent', 'Monthly O&M') 
+            THEN 1 
+        END)::bigint as priority_job_count,
+        
+        -- Recurring site count
+        COUNT(CASE WHEN jp.is_recurring_site THEN 1 END)::bigint as recurring_count,
+        
+        -- Average days until due
+        AVG(jp.days_til_due)::numeric as avg_days_til_due
+        
+    FROM job_pool jp
+    INNER JOIN job_technician_eligibility jte 
+        ON jp.work_order = jte.work_order
+    WHERE jte.technician_id = p_tech_id
+      AND jp.due_date BETWEEN p_month_start AND p_month_end
+      AND jp.jp_status IN ('Call', 'Waiting to Schedule')
+      AND (p_sow_filter IS NULL OR jp.sow_1 = p_sow_filter)
+    GROUP BY jp.region
+    HAVING COUNT(jp.work_order) > 0
+    ORDER BY 
+        COUNT(CASE WHEN jp.jp_priority IN ('NOV', 'Urgent') THEN 1 END) DESC,
+        COUNT(jp.work_order) DESC;
+END;$function$
+"
+find_jobs_along_route,"CREATE OR REPLACE FUNCTION public.find_jobs_along_route(start_lat double precision, start_lon double precision, end_lat double precision, end_lon double precision, corridor_miles double precision DEFAULT 10, max_results integer DEFAULT 20)
+ RETURNS TABLE(work_order bigint, site_name text, site_city text, sow_1 text, distance_from_route_miles double precision, due_date date, jp_priority text)
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  RETURN QUERY
+  WITH route_line AS (
+    SELECT ST_MakeLine(
+      ST_SetSRID(ST_MakePoint(start_lon, start_lat), 4326),
+      ST_SetSRID(ST_MakePoint(end_lon, end_lat), 4326)
+    )::geography AS line
+  )
+  SELECT 
+    j.work_order,
+    j.site_name,
+    j.site_city,
+    j.sow_1,
+    (ST_Distance(
+      ST_SetSRID(ST_MakePoint(j.longitude, j.latitude), 4326)::geography,
+      r.line
+    ) / 1609.34)::double precision AS distance_from_route_miles,
+    j.due_date,
+    j.jp_priority
+  FROM job_pool j, route_line r
+  WHERE 
+    j.jp_status NOT IN ('Scheduled', 'Completed', 'Cancelled')
+    AND ST_DWithin(
+      ST_SetSRID(ST_MakePoint(j.longitude, j.latitude), 4326)::geography,
+      r.line,
+      corridor_miles * 1609.34
+    )
+  ORDER BY distance_from_route_miles
+  LIMIT max_results;
+END;
+$function$
+"
+find_nearby_jobs,"CREATE OR REPLACE FUNCTION public.find_nearby_jobs(center_lat double precision, center_lon double precision, radius_miles double precision DEFAULT 25, max_results integer DEFAULT 20, filter_region text DEFAULT NULL::text)
+ RETURNS TABLE(work_order bigint, site_name text, site_city text, region text, sow_1 text, distance_miles double precision, due_date date, days_til_due bigint, tech_count bigint)
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    j.work_order,
+    j.site_name,
+    j.site_city,
+    j.region,
+    j.sow_1,
+    (ST_Distance(
+      ST_SetSRID(ST_MakePoint(j.longitude, j.latitude), 4326)::geography,
+      ST_SetSRID(ST_MakePoint(center_lon, center_lat), 4326)::geography
+    ) / 1609.34)::double precision AS distance_miles,
+    j.due_date,
+    j.days_til_due,
+    j.tech_count
+  FROM job_pool j
+  WHERE 
+    j.jp_status NOT IN ('Scheduled', 'Completed', 'Cancelled')
+    AND (filter_region IS NULL OR j.region = filter_region)
+    AND ST_DWithin(
+      ST_SetSRID(ST_MakePoint(j.longitude, j.latitude), 4326)::geography,
+      ST_SetSRID(ST_MakePoint(center_lon, center_lat), 4326)::geography,
+      radius_miles * 1609.34
+    )
+  ORDER BY distance_miles
+  LIMIT max_results;
+END;
+$function$
+"
+find_nearby_jobs_for_schedule,"CREATE OR REPLACE FUNCTION public.find_nearby_jobs_for_schedule(tech_lat double precision, tech_lon double precision, schedule_date date, radius_miles double precision DEFAULT 50, max_results integer DEFAULT 20, filter_region text DEFAULT NULL::text)
+ RETURNS TABLE(work_order bigint, site_name text, site_city text, region text, sow text, distance_miles double precision, due_date date, days_til_due integer, priority text, status text, combined_work_orders text)
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  week_start date;
+  week_end date;
+  month_end date;
+  use_pull_forward boolean;
+BEGIN
+  -- Calculate week boundaries
+  week_start := schedule_date - EXTRACT(DOW FROM schedule_date)::integer;
+  week_end := week_start + 4; -- Friday
+  month_end := DATE_TRUNC('month', schedule_date) + INTERVAL '1 month - 1 day';
+  
+  -- Use pull forward if in last 2 weeks of month
+  use_pull_forward := (month_end - week_start) <= 14;
+  
+  RETURN QUERY
+  WITH eligible AS (
+    SELECT * FROM get_jobs_for_scheduling(week_start, week_end, use_pull_forward)
+  )
+  SELECT 
+    e.out_work_order,
+    e.out_site_name,
+    e.out_site_city,
+    e.out_region,
+    e.out_sow_1,
+    (ST_Distance(
+      ST_SetSRID(ST_MakePoint(j.longitude, j.latitude), 4326)::geography,
+      ST_SetSRID(ST_MakePoint(tech_lon, tech_lat), 4326)::geography
+    ) / 1609.34)::double precision AS distance_miles,
+    e.out_due_date,
+    e.out_days_til_due,
+    e.out_jp_priority,
+    e.out_jp_status,
+    e.out_combined_work_orders
+  FROM eligible e
+  JOIN job_pool j ON e.out_work_order = j.work_order
+  WHERE 
+    (filter_region IS NULL OR e.out_region = filter_region)
+    AND ST_DWithin(
+      ST_SetSRID(ST_MakePoint(j.longitude, j.latitude), 4326)::geography,
+      ST_SetSRID(ST_MakePoint(tech_lon, tech_lat), 4326)::geography,
+      radius_miles * 1609.34
+    )
+  ORDER BY e.out_priority_rank, distance_miles
+  LIMIT max_results;
+END;
+$function$
+"
+get_adjacent_regions,"CREATE OR REPLACE FUNCTION public.get_adjacent_regions(p_region_name text, p_max_distance_miles numeric DEFAULT 100)
+ RETURNS TABLE(adjacent_region text, distance_miles numeric)
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+    RETURN QUERY
+    WITH base_region AS (
+        SELECT boundary
+        FROM regions
+        WHERE region_name = p_region_name
+    )
+    SELECT 
+        r.region_name AS adjacent_region,
+        (ST_Distance(
+            br.boundary::geography,
+            r.boundary::geography
+        ) / 1609.34)::NUMERIC AS distance_miles
+    FROM regions r
+    CROSS JOIN base_region br
+    WHERE r.region_name != p_region_name
+    AND r.boundary IS NOT NULL
+    AND br.boundary IS NOT NULL
+    AND ST_Distance(
+        br.boundary::geography,
+        r.boundary::geography
+    ) / 1609.34 <= p_max_distance_miles
+    ORDER BY distance_miles ASC
+    LIMIT 5;
+END;
+$function$
+"
+get_all_jobs_in_region,"CREATE OR REPLACE FUNCTION public.get_all_jobs_in_region(p_tech_id bigint, p_region_name text, p_month_start date, p_month_end date, p_sow_filter text DEFAULT NULL::text)
+ RETURNS TABLE(work_order bigint, site_id bigint, site_name text, site_city text, latitude double precision, longitude double precision, sow_1 text, due_date date, jp_priority text, duration double precision, is_recurring_site boolean, is_night boolean, night_test boolean, days_til_due bigint, priority_rank bigint, distance_from_tech_home double precision)
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        jp.work_order,
+        jp.site_id,
+        jp.site_name,
+        jp.site_city,
+        jp.latitude,
+        jp.longitude,
+        jp.sow_1,
+        jp.due_date,
+        jp.jp_priority,
+        COALESCE(jp.duration, 2)::double precision,
+        COALESCE(jp.is_recurring_site, false),
+        false,
+        COALESCE(jp.night_test, false),
+        jp.days_til_due,
+        
+        (CASE 
+            WHEN jp.jp_priority = 'NOV' THEN 1
+            WHEN jp.jp_priority = 'Urgent' THEN 1
+            WHEN jp.jp_priority = 'Monthly O&M' THEN 2
+            WHEN jp.is_recurring_site THEN 2
+            WHEN jp.days_til_due <= 7 THEN 3
+            WHEN jp.days_til_due <= 14 THEN 4
+            ELSE 5
+        END)::bigint,  -- Cast to bigint
+        
+        (SELECT 
+            ROUND(
+                CAST(
+                    (3958.8 * acos(
+                        cos(radians(t.home_latitude)) * 
+                        cos(radians(jp.latitude)) * 
+                        cos(radians(jp.longitude) - radians(t.home_longitude)) + 
+                        sin(radians(t.home_latitude)) * 
+                        sin(radians(jp.latitude))
+                    )) AS numeric
+                ), 1
+            )::double precision
+         FROM technicians t
+         WHERE t.technician_id = p_tech_id
+        )
+        
+    FROM job_pool jp
+    INNER JOIN job_technician_eligibility jte 
+        ON jp.work_order = jte.work_order
+    WHERE jte.technician_id = p_tech_id
+      AND jp.region = p_region_name
+      AND jp.due_date BETWEEN p_month_start AND p_month_end
+      AND jp.jp_status IN ('Call', 'Waiting to Schedule')
+      AND (p_sow_filter IS NULL OR jp.sow_1 = p_sow_filter)
+    ORDER BY 
+        15 DESC,  -- priority_rank
+        14 ASC,   -- days_til_due
+        16 ASC;   -- distance_from_tech_home
+END;
+$function$
+"

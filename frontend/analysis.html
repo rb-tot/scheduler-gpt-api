@@ -222,36 +222,56 @@
     </style>
 </head>
 <body>
-    <div style="background: white; padding: 15px 30px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center;">
-        <h2 style="margin: 0; color: #1f2937; font-size: 24px;">🗓️ SchedulerGPT</h2>
+    <div style="background: #1e3a5f; padding: 12px 30px; display: flex; justify-content: space-between; align-items: center;">
+        <h2 style="margin: 0; color: white; font-size: 20px;">SchedulerGPT</h2>
         <div style="display: flex; gap: 10px;">
-            <a href="/schedule-review-dashboard" style="padding: 8px 16px; background: #3b82f6; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">📅 Dashboard</a>
-            <a href="/analysis" style="padding: 8px 16px; background: #10b981; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">📊 Analysis</a>
-            <a href="/tech-manager" style="padding: 8px 16px; background: #f59e0b; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">👷 Technicians</a>
-            <a href="/data-manager" style="padding: 8px 16px; background: #6b7280; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">📁 Data</a>
-            <a href="/ai-scheduler" class="btn btn-primary">🤖 AI Scheduler</a>
+            <a href="/scheduler-helper" style="padding: 8px 16px; background: #3b82f6; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">Scheduler</a>
+            <a href="/analysis" style="padding: 8px 16px; background: rgba(255,255,255,0.2); color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">Analysis</a>
+            <a href="/tech-manager" style="padding: 8px 16px; background: #f59e0b; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">Technicians</a>
+            <a href="/data-manager" style="padding: 8px 16px; background: #6b7280; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">Data Manager</a>
         </div>
     </div>
     <div class="header">
-        <h1>📊 Monthly Planning Analysis</h1>
-        <nav class="nav-buttons">
-            <a href="/" class="nav-btn">Dashboard</a>
-            <a href="/static/analysis.html" class="nav-btn">Analysis</a>
-            <a href="/static/schedule-editor.html" class="nav-btn">Schedule Editor</a>
-        </nav>
+        <h1>Monthly Planning Analysis</h1>
     </div>
 
     <div class="container">
         <div class="controls">
             <label>Select Month:</label>
             <select id="month-select">
-                <option value="9">September 2025</option>
-                <option value="10">October 2025</option>
-                <option value="11">November 2025</option>
-                <option value="12">December 2025</option>
+                <!-- Populated dynamically -->
             </select>
             <button onclick="runAnalysis()">Run Analysis</button>
         </div>
+        
+        <script>
+            // Dynamically populate month dropdown (current month + next 11 months)
+            (function() {
+                const select = document.getElementById('month-select');
+                const now = new Date();
+                const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+                                   'July', 'August', 'September', 'October', 'November', 'December'];
+                
+                for (let i = 0; i < 12; i++) {
+                    const date = new Date(now.getFullYear(), now.getMonth() + i, 1);
+                    const month = date.getMonth() + 1; // 1-12
+                    const year = date.getFullYear();
+                    
+                    const option = document.createElement('option');
+                    option.value = month;
+                    option.dataset.year = year;
+                    option.textContent = `${monthNames[month - 1]} ${year}`;
+                    if (i === 0) option.selected = true;
+                    select.appendChild(option);
+                }
+                
+                // Helper function to get selected year
+                window.getSelectedYear = function() {
+                    const selected = select.options[select.selectedIndex];
+                    return parseInt(selected.dataset.year);
+                };
+            })();
+        </script>
         
         <div id="summary-cards" class="card-grid">
             <!-- Cards will be populated here -->

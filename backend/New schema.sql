@@ -27,6 +27,21 @@ CREATE TABLE public.job_archive (
   archived_by text,
   CONSTRAINT job_archive_pkey PRIMARY KEY (work_order)
 );
+CREATE TABLE public.job_history (
+  work_order bigint NOT NULL,
+  site_id bigint,
+  site_name text,
+  scheduled_date date NOT NULL,
+  technician_id bigint,
+  sow_1 text,
+  jp_priority text,
+  duration numeric,
+  latitude numeric,
+  longitude numeric,
+  region text,
+  imported_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT job_history_pkey PRIMARY KEY (work_order)
+);
 CREATE TABLE public.job_pool (
   work_order bigint NOT NULL,
   site_name text,
@@ -87,6 +102,14 @@ CREATE TABLE public.reservations (
   CONSTRAINT reservations_pkey PRIMARY KEY (tech_id, date),
   CONSTRAINT reservations_tech_id_fkey FOREIGN KEY (tech_id) REFERENCES public.technicians(technician_id)
 );
+CREATE TABLE public.scheduled_job_additional_techs (
+  work_order bigint NOT NULL,
+  technician_id bigint NOT NULL,
+  added_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT scheduled_job_additional_techs_pkey PRIMARY KEY (work_order, technician_id),
+  CONSTRAINT fk_work_order FOREIGN KEY (work_order) REFERENCES public.scheduled_jobs(work_order),
+  CONSTRAINT fk_technician FOREIGN KEY (technician_id) REFERENCES public.technicians(technician_id)
+);
 CREATE TABLE public.scheduled_jobs (
   work_order bigint NOT NULL,
   site_name text,
@@ -110,9 +133,9 @@ CREATE TABLE public.scheduled_jobs (
   longitude numeric,
   CONSTRAINT scheduled_jobs_pkey PRIMARY KEY (work_order),
   CONSTRAINT Scheduled_Jobs_work_order_fkey FOREIGN KEY (work_order) REFERENCES public.job_pool(work_order),
-  CONSTRAINT Scheduled_Jobs_assigned_tech_name_fkey FOREIGN KEY (assigned_tech_name) REFERENCES public.technicians(name),
   CONSTRAINT Scheduled_Jobs_assigned_tech_id_fkey FOREIGN KEY (technician_id) REFERENCES public.technicians(technician_id),
-  CONSTRAINT scheduled_jobs_site_id_fkey FOREIGN KEY (site_id) REFERENCES public.sites(site_id)
+  CONSTRAINT scheduled_jobs_site_id_fkey FOREIGN KEY (site_id) REFERENCES public.sites(site_id),
+  CONSTRAINT Scheduled_Jobs_assigned_tech_name_fkey FOREIGN KEY (assigned_tech_name) REFERENCES public.technicians(name)
 );
 CREATE TABLE public.site_distance_matrix (
   from_site_name text NOT NULL,
@@ -153,6 +176,18 @@ CREATE TABLE public.spatial_ref_sys (
   srtext character varying,
   proj4text character varying,
   CONSTRAINT spatial_ref_sys_pkey PRIMARY KEY (srid)
+);
+CREATE TABLE public.stg_job_history (
+  work_order bigint,
+  site_id bigint,
+  site_name text,
+  scheduled_date text,
+  technician_id bigint,
+  sow_1 text,
+  jp_priority text,
+  duration numeric,
+  latitude numeric,
+  longitude numeric
 );
 CREATE TABLE public.stg_job_pool (
   work_order bigint,

@@ -7,7 +7,7 @@ def get_job_pool(
     due_start: date,
     due_end: date,
     states: Optional[List[str]] = None,
-    statuses: Tuple[str, ...] = ("ready", "pending"),
+    statuses: Tuple[str, ...] = ("Call", "Waitnig to Schedule"),
 ) -> List[Dict[str, Any]]:
     filters: List[Tuple[str, str, Any]] = [
         ("due_date", "gte", str(due_start)),
