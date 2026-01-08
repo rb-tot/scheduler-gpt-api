@@ -25,7 +25,7 @@ try:
     from db_queries import job_pool_df as _jp, technicians_df as _techs
     
 except ImportError:
-    print("Ã¢Å¡Â Ã¯Â¸Â  Missing dependencies - install: supabase, pandas")
+    print("Missing dependencies - install: supabase, pandas")
 
 # ============================================================================
 # APP SETUP
@@ -145,7 +145,7 @@ def add_additional_tech(request: AddAdditionalTechRequest):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Ã¢ÂÅ’ Error adding additional tech: {e}")
+        print(f" Error adding additional tech: {e}")
         raise HTTPException(500, str(e))
 
 @app.delete("/api/scheduled-jobs/remove-additional-tech")
@@ -166,7 +166,7 @@ def remove_additional_tech(work_order: int, technician_id: int):
             "message": f"Removed tech {technician_id} from work order {work_order}"
         }
     except Exception as e:
-        print(f"Ã¢ÂÅ’ Error removing additional tech: {e}")
+        print(f" Error removing additional tech: {e}")
         raise HTTPException(500, str(e))
 
 @app.get("/api/scheduled-jobs/additional-techs")
@@ -227,7 +227,7 @@ def get_all_additional_techs(
             "additional_techs": result
         }
     except Exception as e:
-        print(f"Ã¢ÂÅ’ Error getting additional techs: {e}")
+        print(f"Error getting additional techs: {e}")
         return {
             "success": False,
             "additional_techs": [],
@@ -266,7 +266,7 @@ def get_additional_techs_for_job(work_order: int):
             "additional_techs": result
         }
     except Exception as e:
-        print(f"Ã¢ÂÅ’ Error getting additional techs for job: {e}")
+        print(f" Error getting additional techs for job: {e}")
         raise HTTPException(500, str(e))
 
 @app.get("/tech-manager", response_class=HTMLResponse)
@@ -367,7 +367,14 @@ class TimeOffEntry(BaseModel):
 class SaveTimeOffRequest(BaseModel):
     time_off: List[TimeOffEntry]
 
-
+@app.get("/current-schedule", response_class=HTMLResponse)
+def serve_current_schedule():
+    """Serve the current schedule view page"""
+    html_path = os.path.join(frontend_dir, "current-schedule.html")
+    if os.path.exists(html_path):
+        with open(html_path, "r", encoding="utf-8") as f:
+            return f.read()
+    raise HTTPException(404, "current-schedule.html not found")
 # ============================================================================
 # CORE ENDPOINTS
 # ============================================================================
@@ -394,7 +401,7 @@ def get_unscheduled_jobs(
     
     from datetime import datetime, timedelta
     # ADD THIS DEBUG BLOCK ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬Å“
-    print(f"\nÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â DEBUG get_unscheduled_jobs:")
+    print(f"\ DEBUG get_unscheduled_jobs:")
     print(f"  start_date received: {start_date}")
     print(f"  end_date received: {end_date}")
     
@@ -404,17 +411,17 @@ def get_unscheduled_jobs(
     # Add date filters if provided
     if start_date:
         filters.append(("due_date", "gte", start_date))
-        print(f"  ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Added start filter: due_date >= {start_date}")
+        print(f"   Added start filter: due_date >= {start_date}")
     if end_date:
         # Use < next day instead of <= end day for reliable date filtering
         end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
         next_day = (end_date_obj + timedelta(days=1)).strftime("%Y-%m-%d")
         filters.append(("due_date", "lt", next_day))
-        print(f"  ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Added end filter: due_date < {next_day}")
+        print(f"   Added end filter: due_date < {next_day}")
     print(f"  Final filters: {filters}")
     # Get jobs with filters - THIS MUST EXECUTE
     jobs = sb_select("job_pool", filters=filters)
-    print(f"  ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã…Â  Jobs returned: {len(jobs)}")  # ADD THIS TOO
+    print(f"   Jobs returned: {len(jobs)}")  # ADD THIS TOO
     # Check if we got any jobs
     if not jobs:
         return {"count": 0, "jobs": [], "summary": {}}
@@ -424,10 +431,10 @@ def get_unscheduled_jobs(
         jobs = [j for j in jobs if j.get("site_state") == region]
     if priority:
         jobs = [j for j in jobs if j.get("jp_priority") == priority]
-    print(f"  ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã…Â  Jobs after region/priority filter: {len(jobs)}")
+    print(f"   Jobs after region/priority filter: {len(jobs)}")
     # Apply limit
     jobs = jobs[:limit]
-    print(f"  ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã…Â  Jobs after limit ({limit}): {len(jobs)}")
+    print(f"   Jobs after limit ({limit}): {len(jobs)}")
     # Add metadata
     for job in jobs:
         # Get eligible techs count
@@ -470,7 +477,7 @@ def get_unscheduled_jobs(
         # Count by urgency
         urg = job.get("urgency", "normal")
         summary["by_urgency"][urg] = summary["by_urgency"].get(urg, 0) + 1
-    print(f"  ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Returning {len(jobs)} jobs to frontend\n")
+    print(f"   Returning {len(jobs)} jobs to frontend\n")
     return {
         "count": len(jobs),
         "jobs": jobs,
@@ -1172,7 +1179,7 @@ def add_secondary_tech(req: AddSecondaryTechRequest):
             "secondary_tech_id": req.secondary_tech_id
         }
     except Exception as e:
-        print(f"âŒ Error adding secondary tech: {e}")
+        print(f" Error adding secondary tech: {e}")
         return {"success": False, "error": str(e)}
 
 
@@ -1241,7 +1248,7 @@ def get_all_additional_techs(week_start: str = None):
         return {"success": True, "additional_techs": result}
         
     except Exception as e:
-        print(f"âŒ Error getting additional techs: {e}")
+        print(f" Error getting additional techs: {e}")
         return {"success": False, "additional_techs": [], "error": str(e)}
 
 
@@ -1575,7 +1582,7 @@ def get_full_week_schedule(week_start: str):
                 
                 # Check if tech has home location
                 if tech_id not in tech_homes:
-                    print(f"ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Warning: Tech {tech_id} has no home location, using defaults")
+                    print(f" Warning: Tech {tech_id} has no home location, using defaults")
                     for job in daily_jobs:
                         job['initial_drive_hours'] = 0.5
                         job['drive_time'] = 0
@@ -1699,7 +1706,7 @@ def get_full_week_schedule(week_start: str):
         
     except Exception as e:
         import traceback
-        print(f"ÃƒÂ¢Ã‚ÂÃ…â€™ Error in get_full_week_schedule: {str(e)}")
+        print(f" Error in get_full_week_schedule: {str(e)}")
         print(traceback.format_exc())
         raise HTTPException(500, f"Failed to load week: {str(e)}")
 
@@ -2826,7 +2833,7 @@ def recalculate_eligibility_for_tech(tech_id: int):
     if eligible_jobs:
         sb_insert("job_technician_eligibility", eligible_jobs)
     
-    print(f"ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Recalculated eligibility for Tech {tech_id}: {len(eligible_jobs)} eligible jobs")
+    print(f" Recalculated eligibility for Tech {tech_id}: {len(eligible_jobs)} eligible jobs")
 
 # ============================================================================
 # TIME OFF MANAGEMENT

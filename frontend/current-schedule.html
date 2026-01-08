@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Current Schedule - SchedulerGPT</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; }
+        .nav-bar { background: #1e3a5f; color: white; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; }
+        .nav-bar h1 { font-size: 18px; font-weight: 600; }
+        .nav-links { display: flex; gap: 8px; }
+        .nav-links a { color: white; text-decoration: none; padding: 8px 14px; border-radius: 4px; background: rgba(255,255,255,0.1); font-size: 14px; transition: background 0.2s; }
+        .nav-links a:hover { background: rgba(255,255,255,0.2); }
+        .nav-links a.active { background: #3b82f6; }
+        .controls-bar { background: white; padding: 12px 20px; border-bottom: 1px solid #e5e7eb; display: flex; gap: 15px; align-items: center; flex-wrap: wrap; }
+        .controls-bar label { font-size: 13px; color: #4b5563; font-weight: 500; }
+        .controls-bar input[type="date"] { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 14px; }
+        .controls-bar button { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500; }
+        .btn-primary { background: #3b82f6; color: white; }
+        .btn-primary:hover { background: #2563eb; }
+        .btn-toggle { background: #f3f4f6; color: #374151; border: 1px solid #d1d5db !important; }
+        .btn-toggle.active { background: #dc2626; color: white; border-color: #dc2626 !important; }
+        .quick-range { display: flex; gap: 5px; margin-left: 10px; }
+        .quick-range button { padding: 5px 10px; font-size: 12px; background: #e5e7eb; color: #374151; }
+        .quick-range button:hover { background: #d1d5db; }
+        .main-container { display: flex; height: calc(100vh - 110px); }
+        .schedule-panel { flex: 1; overflow-y: auto; padding: 15px; background: #f5f7fa; }
+        .day-card { background: white; border-radius: 8px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow: hidden; }
+        .day-header { background: #1e3a5f; color: white; padding: 10px 15px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+        .day-header .day-stats { display: flex; gap: 15px; font-size: 12px; font-weight: normal; }
+        .day-header .day-stats span { background: rgba(255,255,255,0.2); padding: 2px 8px; border-radius: 10px; }
+        .day-header.today { background: #059669; }
+        .day-jobs { padding: 10px; }
+        .day-jobs.empty { padding: 20px; text-align: center; color: #9ca3af; font-style: italic; }
+        .tech-group { margin-bottom: 10px; border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden; }
+        .tech-group:last-child { margin-bottom: 0; }
+        .tech-group-header { padding: 8px 12px; font-weight: 600; font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
+        .tech-group-header .tech-totals { font-weight: normal; font-size: 11px; display: flex; gap: 10px; }
+        .tech-group-header .tech-totals .over-hours { color: #dc2626; font-weight: bold; }
+        .tech-group-jobs { padding: 8px; background: #fafafa; }
+        .job-item { display: flex; align-items: center; padding: 6px 8px; border-radius: 4px; margin-bottom: 4px; cursor: pointer; transition: background 0.2s; background: white; border: 1px solid #e5e7eb; }
+        .job-item:hover { background: #f0f7ff; }
+        .job-item:last-child { margin-bottom: 0; }
+        .job-item.monthly-oam { border-left: 3px solid #f59e0b; }
+        .job-info { flex: 1; min-width: 0; }
+        .job-site { font-weight: 600; font-size: 12px; color: #1f2937; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .job-details { font-size: 10px; color: #6b7280; margin-top: 1px; }
+        .job-times { font-size: 11px; color: #374151; text-align: right; margin-left: 10px; white-space: nowrap; }
+        .job-times .duration { font-weight: 600; }
+        .job-times .drive { color: #6b7280; font-size: 10px; }
+        .map-panel { width: 50%; min-width: 400px; position: relative; }
+        #map { width: 100%; height: 100%; }
+        .tech-legend { position: absolute; bottom: 20px; left: 10px; background: white; padding: 10px 12px; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 1000; max-height: 200px; overflow-y: auto; font-size: 12px; }
+        .tech-legend h4 { margin-bottom: 8px; font-size: 12px; color: #374151; }
+        .legend-item { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+        .legend-color { width: 14px; height: 14px; border-radius: 50%; }
+        .urgent-panel { position: fixed; right: 0; top: 110px; width: 320px; height: calc(100vh - 110px); background: white; box-shadow: -2px 0 10px rgba(0,0,0,0.1); z-index: 1001; transform: translateX(100%); transition: transform 0.3s ease; display: flex; flex-direction: column; }
+        .urgent-panel.open { transform: translateX(0); }
+        .urgent-header { background: #dc2626; color: white; padding: 12px 15px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+        .urgent-header .close-btn { background: none; border: none; color: white; font-size: 18px; cursor: pointer; padding: 0 5px; }
+        .urgent-content { flex: 1; overflow-y: auto; padding: 10px; }
+        .urgent-job { background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 10px; margin-bottom: 8px; cursor: pointer; }
+        .urgent-job:hover { background: #fee2e2; }
+        .urgent-job .due-badge { background: #dc2626; color: white; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: bold; }
+        .urgent-job .site-name { font-weight: 600; font-size: 13px; margin: 5px 0; }
+        .urgent-job .job-meta { font-size: 11px; color: #6b7280; }
+        .lookup-panel { position: absolute; top: 10px; right: 10px; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.15); z-index: 1000; width: 340px; max-height: calc(100vh - 150px); overflow-y: auto; }
+        .lookup-panel h4 { margin-bottom: 10px; font-size: 14px; color: #1f2937; }
+        .lookup-panel input[type="text"], .lookup-panel input[type="number"] { width: 100%; padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 13px; margin-bottom: 8px; }
+        .lookup-panel .input-row { display: flex; gap: 8px; margin-bottom: 8px; }
+        .lookup-panel .input-row input { margin-bottom: 0; }
+        .lookup-panel .input-row label { font-size: 11px; color: #6b7280; display: block; margin-bottom: 3px; }
+        .lookup-panel button { width: 100%; padding: 8px; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500; }
+        .lookup-panel button:hover { background: #2563eb; }
+        .lookup-panel button:disabled { background: #9ca3af; cursor: not-allowed; }
+        .lookup-panel select { width: 100%; padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 13px; margin-bottom: 8px; }
+        .analysis-results { margin-top: 12px; padding-top: 12px; border-top: 1px solid #e5e7eb; display: none; }
+        .analysis-results.show { display: block; }
+        .analysis-results h5 { font-size: 12px; color: #374151; margin-bottom: 8px; }
+        .tech-analysis-card { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px; margin-bottom: 8px; }
+        .tech-analysis-card.best-fit { background: #d1fae5; border-color: #6ee7b7; }
+        .tech-analysis-card.can-bump { background: #fef3c7; border-color: #fcd34d; }
+        .tech-analysis-card.over-hours { background: #fee2e2; border-color: #fca5a5; }
+        .tech-analysis-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .tech-analysis-header .tech-name { font-weight: 600; font-size: 13px; }
+        .tech-analysis-header .fit-badge { font-size: 10px; padding: 2px 6px; border-radius: 3px; font-weight: bold; }
+        .fit-badge.fits { background: #059669; color: white; }
+        .fit-badge.bump { background: #f59e0b; color: white; }
+        .fit-badge.no-fit { background: #dc2626; color: white; }
+        .tech-analysis-details { font-size: 11px; color: #4b5563; }
+        .tech-analysis-details .detail-row { display: flex; justify-content: space-between; padding: 2px 0; }
+        .bump-info { margin-top: 6px; padding-top: 6px; border-top: 1px dashed #d1d5db; font-size: 10px; color: #92400e; }
+        .week-nav { display: flex; gap: 5px; margin-bottom: 10px; }
+        .week-nav button { flex: 1; padding: 6px; font-size: 11px; }
+        .week-nav button.active { background: #1e3a5f; }
+        .loading { text-align: center; padding: 40px; color: #6b7280; }
+        .loading::after { content: ''; display: inline-block; width: 20px; height: 20px; border: 2px solid #e5e7eb; border-top-color: #3b82f6; border-radius: 50%; animation: spin 0.8s linear infinite; margin-left: 10px; vertical-align: middle; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <nav class="nav-bar">
+        <h1>SchedulerGPT - Current Schedule</h1>
+        <div class="nav-links">
+            <a href="/scheduler-helper">Scheduler</a>
+            <a href="/analysis">Analysis</a>
+            <a href="/tech-manager">Technicians</a>
+            <a href="/data-manager">Data Manager</a>
+            <a href="/current-schedule" class="active">Current View</a>
+        </div>
+    </nav>
+    <div class="controls-bar">
+        <div><label>From:</label> <input type="date" id="start-date"></div>
+        <div><label>To:</label> <input type="date" id="end-date"></div>
+        <button class="btn-primary" onclick="loadSchedule()">Load</button>
+        <div class="quick-range">
+            <button onclick="setDateRange('today')">Today</button>
+            <button onclick="setDateRange('week')">This Week</button>
+            <button onclick="setDateRange('next-week')">Next Week</button>
+            <button onclick="setDateRange('2-weeks')">2 Weeks</button>
+        </div>
+        <button class="btn-toggle" id="urgent-toggle" onclick="toggleUrgentPanel()">Urgent Jobs <span id="urgent-count">(0)</span></button>
+    </div>
+    <div class="main-container">
+        <div class="schedule-panel" id="schedule-panel"><div class="loading">Loading schedule...</div></div>
+        <div class="map-panel">
+            <div id="map"></div>
+            <div class="tech-legend" id="tech-legend"><h4>Technicians</h4><div id="legend-items"></div></div>
+            <div class="lookup-panel">
+                <h4>Find Best Fit for New Job</h4>
+                <input type="text" id="address-input" placeholder="Enter address...">
+                <div class="input-row">
+                    <div style="flex:1"><label>Est. Duration (hrs)</label><input type="number" id="job-duration" value="2" min="0.5" max="12" step="0.5"></div>
+                    <div style="flex:1"><label>Analyze Week</label><select id="week-select"><option value="current">Current Week</option><option value="next">Next Week</option></select></div>
+                </div>
+                <button onclick="lookupAddress()" id="lookup-btn">Find Best Fit</button>
+                <div class="analysis-results" id="analysis-results">
+                    <div class="week-nav">
+                        <button class="btn-primary active" id="btn-current-week" onclick="switchAnalysisWeek('current')">Current Week</button>
+                        <button class="btn-primary" id="btn-next-week" onclick="switchAnalysisWeek('next')">Next Week</button>
+                    </div>
+                    <h5>Tech Availability Analysis</h5>
+                    <div id="tech-analysis"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="urgent-panel" id="urgent-panel">
+        <div class="urgent-header"><span>Urgent Unscheduled Jobs</span><button class="close-btn" onclick="toggleUrgentPanel()">&times;</button></div>
+        <div class="urgent-content" id="urgent-content"><div class="loading">Loading...</div></div>
+    </div>
+    <script>
+        const TECH_COLORS = ['#8b5cf6','#ec4899','#0ea5e9','#6366f1','#14b8a6','#a855f7','#f43f5e','#06b6d4','#d946ef','#0284c7','#7c3aed','#db2777'];
+        const MAX_DAILY_HOURS = 12;
+        const DRIVE_SPEED_MPH = 45;
+        let map = null, technicians = [], scheduledJobs = [], urgentJobs = [], markers = [], lookupMarker = null, urgentPanelOpen = false, currentAnalysisData = null, nextWeekJobs = [];
+
+        document.addEventListener('DOMContentLoaded', function() {
+            initMap(); setDateRange('week');
+            loadTechnicians().then(() => { loadSchedule(); loadUrgentJobs(); });
+        });
+
+        function initMap() {
+            map = L.map('map').setView([39.5, -105.0], 7);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
+        }
+
+        function setDateRange(range) {
+            const today = new Date(), dayOfWeek = today.getDay();
+            const monday = new Date(today); monday.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+            let startDate, endDate;
+            switch(range) {
+                case 'today': startDate = today; endDate = today; break;
+                case 'week': startDate = today; endDate = new Date(monday); endDate.setDate(monday.getDate() + 4); break;
+                case 'next-week': startDate = new Date(monday); startDate.setDate(monday.getDate() + 7); endDate = new Date(startDate); endDate.setDate(startDate.getDate() + 4); break;
+                case '2-weeks': startDate = today; endDate = new Date(monday); endDate.setDate(monday.getDate() + 11); break;
+            }
+            document.getElementById('start-date').value = formatDate(startDate);
+            document.getElementById('end-date').value = formatDate(endDate);
+            loadSchedule();
+        }
+
+        function formatDate(date) { return date.toISOString().split('T')[0]; }
+        function getMonday(date) { const d = new Date(date), day = d.getDay(); return new Date(d.setDate(d.getDate() - day + (day === 0 ? -6 : 1))); }
+
+        async function loadTechnicians() {
+            try {
+                const res = await fetch('/api/technicians/all'), data = await res.json();
+                technicians = (data.technicians || []).filter(t => t.active);
+                renderLegend();
+            } catch (error) { console.error('Error loading technicians:', error); }
+        }
+
+        function getTechColor(techId) { const index = technicians.findIndex(t => t.technician_id === techId); return TECH_COLORS[index % TECH_COLORS.length] || '#6b7280'; }
+        function getTechName(techId) { const tech = technicians.find(t => t.technician_id === techId); return tech ? tech.name : 'Unknown'; }
+
+        function renderLegend() {
+            document.getElementById('legend-items').innerHTML = technicians.map(tech => `<div class="legend-item"><div class="legend-color" style="background: ${getTechColor(tech.technician_id)}"></div><span>${tech.name}</span></div>`).join('');
+        }
+
+        async function loadSchedule() {
+            const startDate = document.getElementById('start-date').value, endDate = document.getElementById('end-date').value;
+            if (!startDate || !endDate) return;
+            document.getElementById('schedule-panel').innerHTML = '<div class="loading">Loading schedule...</div>';
+            try {
+                scheduledJobs = await fetchJobsForRange(startDate, endDate);
+                renderSchedule(startDate, endDate);
+                renderMapMarkers();
+            } catch (error) {
+                console.error('Error loading schedule:', error);
+                document.getElementById('schedule-panel').innerHTML = '<div style="padding: 20px; color: #dc2626;">Error: ' + error.message + '</div>';
+            }
+        }
+
+        async function fetchJobsForRange(startDate, endDate) {
+            const start = new Date(startDate + 'T00:00:00'), end = new Date(endDate + 'T00:00:00');
+            let current = new Date(start), dayOfWeek = current.getDay();
+            current.setDate(current.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+            const weekStarts = new Set();
+            while (current <= end) { weekStarts.add(formatDate(current)); current.setDate(current.getDate() + 7); }
+            let allJobs = [];
+            for (const weekStart of weekStarts) {
+                const res = await fetch(`/api/schedule/week-all?week_start=${weekStart}`), data = await res.json();
+                if (data.scheduled_jobs) allJobs = allJobs.concat(data.scheduled_jobs);
+            }
+            allJobs = allJobs.filter(job => job.date >= startDate && job.date <= endDate);
+            const seen = new Set();
+            return allJobs.filter(job => { if (seen.has(job.work_order)) return false; seen.add(job.work_order); return true; });
+        }
+
+        function renderSchedule(startDate, endDate) {
+            const panel = document.getElementById('schedule-panel');
+            const start = new Date(startDate + 'T00:00:00'), end = new Date(endDate + 'T00:00:00'), today = formatDate(new Date());
+            const jobsByDate = {};
+            scheduledJobs.forEach(job => { if (!jobsByDate[job.date]) jobsByDate[job.date] = []; jobsByDate[job.date].push(job); });
+            let html = '';
+            const current = new Date(start);
+            const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            while (current <= end) {
+                const dateStr = formatDate(current), dayJobs = jobsByDate[dateStr] || [], isToday = dateStr === today;
+                const dayName = dayNames[current.getDay()], displayDate = `${current.getMonth() + 1}/${current.getDate()}`;
+                const jobsByTech = {};
+                dayJobs.forEach(job => { const techId = job.technician_id; if (!jobsByTech[techId]) jobsByTech[techId] = []; jobsByTech[techId].push(job); });
+                const totalJobs = dayJobs.length;
+                const totalWorkHours = dayJobs.reduce((sum, j) => sum + (j.duration || 2), 0);
+                const totalDriveHours = dayJobs.reduce((sum, j) => sum + (j.initial_drive_hours || 0) + (j.drive_time || 0), 0);
+                html += `<div class="day-card"><div class="day-header ${isToday ? 'today' : ''}"><span>${dayName} ${displayDate}</span><div class="day-stats"><span>${totalJobs} jobs</span><span>${totalWorkHours.toFixed(1)}h work</span><span>${totalDriveHours.toFixed(1)}h drive</span></div></div><div class="day-jobs ${totalJobs === 0 ? 'empty' : ''}">`;
+                if (totalJobs === 0) { html += 'No jobs scheduled'; }
+                else {
+                    Object.keys(jobsByTech).forEach(techId => {
+                        const techJobs = jobsByTech[techId], color = getTechColor(parseInt(techId)), techName = getTechName(parseInt(techId));
+                        techJobs.sort((a, b) => (a.initial_drive_hours && !b.initial_drive_hours) ? -1 : (!a.initial_drive_hours && b.initial_drive_hours) ? 1 : 0);
+                        const techWorkHours = techJobs.reduce((sum, j) => sum + (j.duration || 2), 0);
+                        const techDriveHours = techJobs.reduce((sum, j) => sum + (j.initial_drive_hours || 0) + (j.drive_time || 0), 0);
+                        const techTotalHours = techWorkHours + techDriveHours, isOverHours = techTotalHours > MAX_DAILY_HOURS;
+                        html += `<div class="tech-group"><div class="tech-group-header" style="background: ${color}20; border-left: 4px solid ${color};"><span style="color: ${color}">${techName}</span><div class="tech-totals"><span>${techJobs.length} jobs</span><span>${techWorkHours.toFixed(1)}h work</span><span>${techDriveHours.toFixed(1)}h drive</span><span class="${isOverHours ? 'over-hours' : ''}">${techTotalHours.toFixed(1)}h total</span></div></div><div class="tech-group-jobs">`;
+                        techJobs.forEach((job, idx) => {
+                            const duration = job.duration || 2, driveTime = idx === 0 ? (job.initial_drive_hours || 0) : (job.drive_time || 0);
+                            const isMonthlyOAM = (job.jp_priority || '').toLowerCase().includes('monthly');
+                            html += `<div class="job-item ${isMonthlyOAM ? 'monthly-oam' : ''}" onclick="focusJob(${job.work_order})" data-work-order="${job.work_order}"><div class="job-info"><div class="job-site">${job.site_name || 'Unknown Site'}</div><div class="job-details">${job.site_city || ''}, ${job.site_state || ''} | ${job.sow_1 || 'N/A'} | ${job.jp_priority || 'N/A'}</div></div><div class="job-times"><div class="duration">${duration}h</div>${driveTime > 0 ? `<div class="drive">+${driveTime.toFixed(1)}h drive</div>` : ''}</div></div>`;
+                        });
+                        html += '</div></div>';
+                    });
+                }
+                html += '</div></div>';
+                current.setDate(current.getDate() + 1);
+            }
+            panel.innerHTML = html;
+        }
+
+        function renderMapMarkers() {
+            markers.forEach(m => map.removeLayer(m)); markers = [];
+            technicians.forEach(tech => {
+                if (tech.home_latitude && tech.home_longitude) {
+                    const color = getTechColor(tech.technician_id);
+                    const homeIcon = L.divIcon({ className: 'custom-marker', html: `<div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:14px solid ${color};filter:drop-shadow(0 1px 2px rgba(0,0,0,0.3));"></div>`, iconSize: [16, 14], iconAnchor: [8, 14] });
+                    const marker = L.marker([tech.home_latitude, tech.home_longitude], { icon: homeIcon }).bindTooltip(`${tech.name} (Home)`, { permanent: false });
+                    marker.addTo(map); markers.push(marker);
+                }
+            });
+            scheduledJobs.forEach(job => {
+                if (job.latitude && job.longitude) {
+                    const color = getTechColor(job.technician_id);
+                    const jobIcon = L.divIcon({ className: 'custom-marker', html: `<div style="width:12px;height:12px;background:${color};border:2px solid white;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.3);"></div>`, iconSize: [12, 12], iconAnchor: [6, 6] });
+                    const marker = L.marker([job.latitude, job.longitude], { icon: jobIcon }).bindPopup(`<strong>${job.site_name}</strong><br>${job.site_city}, ${job.site_state}<br>${job.date}<br>Tech: ${getTechName(job.technician_id)}<br>SOW: ${job.sow_1 || 'N/A'} | Duration: ${job.duration || 2}h<br>Priority: ${job.jp_priority || 'N/A'}`);
+                    marker.workOrder = job.work_order; marker.addTo(map); markers.push(marker);
+                }
+            });
+            if (scheduledJobs.length > 0) {
+                const bounds = L.latLngBounds(scheduledJobs.filter(j => j.latitude && j.longitude).map(j => [j.latitude, j.longitude]));
+                if (bounds.isValid()) map.fitBounds(bounds, { padding: [50, 50] });
+            }
+        }
+
+        function focusJob(workOrder) { const marker = markers.find(m => m.workOrder === workOrder); if (marker) { map.setView(marker.getLatLng(), 12); marker.openPopup(); } }
+
+        async function loadUrgentJobs() {
+            try {
+                const today = new Date(), futureDate = new Date(today); futureDate.setDate(today.getDate() + 10);
+                const res = await fetch(`/api/jobs/unscheduled?start_date=${formatDate(today)}&end_date=${formatDate(futureDate)}&limit=100`), data = await res.json();
+                urgentJobs = data.jobs || [];
+                urgentJobs.sort((a, b) => (a.due_date || '').localeCompare(b.due_date || ''));
+                document.getElementById('urgent-count').textContent = `(${urgentJobs.length})`;
+                renderUrgentJobs();
+            } catch (error) { console.error('Error loading urgent jobs:', error); }
+        }
+
+        function renderUrgentJobs() {
+            const container = document.getElementById('urgent-content');
+            if (urgentJobs.length === 0) { container.innerHTML = '<div style="padding:20px;text-align:center;color:#6b7280;">No urgent jobs in next 10 days</div>'; return; }
+            container.innerHTML = urgentJobs.map(job => {
+                const dueDate = job.due_date ? new Date(job.due_date + 'T00:00:00') : null, today = new Date();
+                const daysUntil = dueDate ? Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24)) : '?';
+                return `<div class="urgent-job" onclick="showUrgentOnMap(${job.latitude}, ${job.longitude}, '${(job.site_name || '').replace(/'/g, "\\'")}')"><span class="due-badge">${daysUntil <= 0 ? 'OVERDUE' : daysUntil + ' days'}</span><div class="site-name">${job.site_name || 'Unknown'}</div><div class="job-meta">${job.site_city || ''}, ${job.site_state || ''}<br>Due: ${job.due_date || 'N/A'} | ${job.sow_1 || 'N/A'} | ${job.duration || 2}h<br>${job.eligible_tech_count || 0} eligible techs</div></div>`;
+            }).join('');
+        }
+
+        function toggleUrgentPanel() {
+            urgentPanelOpen = !urgentPanelOpen;
+            document.getElementById('urgent-panel').classList.toggle('open', urgentPanelOpen);
+            document.getElementById('urgent-toggle').classList.toggle('active', urgentPanelOpen);
+        }
+
+        function showUrgentOnMap(lat, lng, siteName) {
+            if (lat && lng) {
+                map.setView([lat, lng], 12);
+                if (lookupMarker) map.removeLayer(lookupMarker);
+                const icon = L.divIcon({ className: 'custom-marker', html: `<div style="width:16px;height:16px;background:#dc2626;border:3px solid white;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.4);"></div>`, iconSize: [16, 16], iconAnchor: [8, 8] });
+                lookupMarker = L.marker([lat, lng], { icon }).bindPopup(`<strong>Urgent: ${siteName}</strong>`).addTo(map).openPopup();
+            }
+        }
+
+        async function lookupAddress() {
+            const address = document.getElementById('address-input').value.trim();
+            if (!address) return;
+            const btn = document.getElementById('lookup-btn'); btn.disabled = true; btn.textContent = 'Searching...';
+            try {
+                const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`), data = await res.json();
+                if (data.length === 0) { alert('Address not found.'); return; }
+                const lat = parseFloat(data[0].lat), lng = parseFloat(data[0].lon);
+                if (lookupMarker) map.removeLayer(lookupMarker);
+                const icon = L.divIcon({ className: 'custom-marker', html: `<div style="width:20px;height:20px;background:#f59e0b;border:3px solid white;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.4);"></div>`, iconSize: [20, 20], iconAnchor: [10, 10] });
+                lookupMarker = L.marker([lat, lng], { icon }).bindPopup(`<strong>Lookup Location</strong><br>${address}`).addTo(map).openPopup();
+                map.setView([lat, lng], 10);
+                const monday = getMonday(new Date()), nextMonday = new Date(monday); nextMonday.setDate(monday.getDate() + 7);
+                const nextFriday = new Date(nextMonday); nextFriday.setDate(nextMonday.getDate() + 4);
+                nextWeekJobs = await fetchJobsForRange(formatDate(nextMonday), formatDate(nextFriday));
+                currentAnalysisData = { lat, lng, address, duration: parseFloat(document.getElementById('job-duration').value) || 2 };
+                const weekSelect = document.getElementById('week-select').value;
+                analyzeNearestTechs(lat, lng, weekSelect === 'next' ? nextWeekJobs : scheduledJobs, weekSelect);
+            } catch (error) { console.error('Geocoding error:', error); alert('Error looking up address.'); }
+            finally { btn.disabled = false; btn.textContent = 'Find Best Fit'; }
+        }
+
+        function switchAnalysisWeek(week) {
+            if (!currentAnalysisData) return;
+            document.getElementById('btn-current-week').classList.toggle('active', week === 'current');
+            document.getElementById('btn-next-week').classList.toggle('active', week === 'next');
+            analyzeNearestTechs(currentAnalysisData.lat, currentAnalysisData.lng, week === 'next' ? nextWeekJobs : scheduledJobs, week);
+        }
+
+        function haversineDistance(lat1, lon1, lat2, lon2) {
+            const R = 3959, dLat = (lat2 - lat1) * Math.PI / 180, dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+
+        function analyzeNearestTechs(targetLat, targetLng, jobs, weekLabel) {
+            const analysisDiv = document.getElementById('tech-analysis');
+            const jobDuration = parseFloat(document.getElementById('job-duration').value) || 2;
+            const monday = weekLabel === 'next' ? new Date(getMonday(new Date()).getTime() + 7 * 24 * 60 * 60 * 1000) : getMonday(new Date());
+            const weekDates = []; for (let i = 0; i < 5; i++) { const d = new Date(monday); d.setDate(monday.getDate() + i); weekDates.push(formatDate(d)); }
+            const jobsByTechDate = {};
+            jobs.forEach(job => { const key = `${job.technician_id}-${job.date}`; if (!jobsByTechDate[key]) jobsByTechDate[key] = []; jobsByTechDate[key].push(job); });
+
+            const techAnalysis = technicians.filter(t => t.home_latitude && t.home_longitude).map(tech => {
+                const techId = tech.technician_id;
+                const homeDistance = haversineDistance(targetLat, targetLng, tech.home_latitude, tech.home_longitude);
+                const homeDriveTime = homeDistance / DRIVE_SPEED_MPH;
+                const dayAnalysis = weekDates.map(dateStr => {
+                    const key = `${techId}-${dateStr}`, dayJobs = jobsByTechDate[key] || [];
+                    const workHours = dayJobs.reduce((sum, j) => sum + (j.duration || 2), 0);
+                    const driveHours = dayJobs.reduce((sum, j) => sum + (j.initial_drive_hours || 0) + (j.drive_time || 0), 0);
+                    const currentTotalHours = workHours + driveHours;
+                    let closestJobDistance = Infinity, closestJob = null;
+                    dayJobs.forEach(job => { if (job.latitude && job.longitude) { const dist = haversineDistance(targetLat, targetLng, job.latitude, job.longitude); if (dist < closestJobDistance) { closestJobDistance = dist; closestJob = job; } } });
+                    const addedDriveTime = closestJob ? closestJobDistance / DRIVE_SPEED_MPH : homeDriveTime;
+                    const newTotalHours = currentTotalHours + jobDuration + addedDriveTime;
+                    const monthlyOAMJobs = dayJobs.filter(j => (j.jp_priority || '').toLowerCase().includes('monthly'));
+                    const bumpableHours = monthlyOAMJobs.reduce((sum, j) => sum + (j.duration || 2), 0);
+                    let fitStatus, hoursAfterBump = newTotalHours;
+                    if (newTotalHours <= MAX_DAILY_HOURS) { fitStatus = 'fits'; }
+                    else if (newTotalHours - bumpableHours <= MAX_DAILY_HOURS && monthlyOAMJobs.length > 0) { fitStatus = 'bump'; hoursAfterBump = newTotalHours - bumpableHours; }
+                    else { fitStatus = 'no-fit'; }
+                    return { date: dateStr, dayName: ['Mon','Tue','Wed','Thu','Fri'][weekDates.indexOf(dateStr)], currentHours: currentTotalHours, newTotalHours, hoursAfterBump, addedDriveTime, closestJobDistance: closestJobDistance === Infinity ? null : closestJobDistance, fitStatus, jobCount: dayJobs.length, monthlyOAMCount: monthlyOAMJobs.length, bumpableHours };
+                });
+                const fittingDays = dayAnalysis.filter(d => d.fitStatus === 'fits'), bumpDays = dayAnalysis.filter(d => d.fitStatus === 'bump');
+                let bestDay = null, bestFitType = 'no-fit';
+                if (fittingDays.length > 0) { bestDay = fittingDays.reduce((best, day) => day.addedDriveTime < best.addedDriveTime ? day : best); bestFitType = 'fits'; }
+                else if (bumpDays.length > 0) { bestDay = bumpDays.reduce((best, day) => day.monthlyOAMCount < best.monthlyOAMCount ? day : best); bestFitType = 'bump'; }
+                return { tech, homeDistance, homeDriveTime, dayAnalysis, bestDay, bestFitType };
+            });
+
+            techAnalysis.sort((a, b) => {
+                const fitOrder = { 'fits': 0, 'bump': 1, 'no-fit': 2 };
+                if (fitOrder[a.bestFitType] !== fitOrder[b.bestFitType]) return fitOrder[a.bestFitType] - fitOrder[b.bestFitType];
+                if (a.bestDay && b.bestDay) return a.bestDay.addedDriveTime - b.bestDay.addedDriveTime;
+                return a.homeDriveTime - b.homeDriveTime;
+            });
+
+            analysisDiv.innerHTML = techAnalysis.map(ta => {
+                const color = getTechColor(ta.tech.technician_id);
+                let cardClass = '', badgeClass = '', badgeText = '';
+                if (ta.bestFitType === 'fits') { cardClass = 'best-fit'; badgeClass = 'fits'; badgeText = 'FITS'; }
+                else if (ta.bestFitType === 'bump') { cardClass = 'can-bump'; badgeClass = 'bump'; badgeText = 'BUMP O&M'; }
+                else { cardClass = 'over-hours'; badgeClass = 'no-fit'; badgeText = 'NO FIT'; }
+                let detailsHtml = '';
+                if (ta.bestDay) {
+                    detailsHtml = `<div class="detail-row"><span>Best Day:</span><span><strong>${ta.bestDay.dayName} ${ta.bestDay.date.slice(5)}</strong></span></div><div class="detail-row"><span>Current on that day:</span><span>${ta.bestDay.jobCount} jobs, ${ta.bestDay.currentHours.toFixed(1)}h</span></div><div class="detail-row"><span>Distance from route:</span><span>${ta.bestDay.closestJobDistance ? ta.bestDay.closestJobDistance.toFixed(0) + ' mi' : ta.homeDistance.toFixed(0) + ' mi (home)'}</span></div><div class="detail-row"><span>Added drive time:</span><span>+${ta.bestDay.addedDriveTime.toFixed(1)}h</span></div><div class="detail-row"><span>New total:</span><span>${ta.bestDay.newTotalHours.toFixed(1)}h</span></div>`;
+                    if (ta.bestFitType === 'bump') { detailsHtml += `<div class="bump-info"><strong>To fit:</strong> Move ${ta.bestDay.monthlyOAMCount} Monthly O&M job(s) (${ta.bestDay.bumpableHours.toFixed(1)}h) to another day.<br>Hours after bump: ${ta.bestDay.hoursAfterBump.toFixed(1)}h</div>`; }
+                } else { detailsHtml = `<div class="detail-row"><span>Distance from home:</span><span>${ta.homeDistance.toFixed(0)} mi</span></div><div class="detail-row" style="color:#dc2626;"><span colspan="2">All days over ${MAX_DAILY_HOURS}h even with bumps</span></div>`; }
+                return `<div class="tech-analysis-card ${cardClass}"><div class="tech-analysis-header"><span class="tech-name" style="color:${color}">${ta.tech.name}</span><span class="fit-badge ${badgeClass}">${badgeText}</span></div><div class="tech-analysis-details">${detailsHtml}</div></div>`;
+            }).join('');
+            document.getElementById('analysis-results').classList.add('show');
+        }
+
+        document.getElementById('address-input').addEventListener('keypress', function(e) { if (e.key === 'Enter') lookupAddress(); });
+    </script>
+</body>
+</html>
