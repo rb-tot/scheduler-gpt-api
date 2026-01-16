@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Schedule Viewer</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; }
+        
+        .header { 
+            background: #9dced1; 
+            color: white; 
+            padding: 12px 20px; 
+            display: flex; 
+            align-items: center; 
+            gap: 15px;
+        }
+        .header img.logo { height: 40px; }
+        .header h1 { font-size: 18px; font-weight: 600; }
+        
+        .controls { 
+            background: white; 
+            padding: 12px 20px; 
+            border-bottom: 1px solid #ddd; 
+            display: flex; 
+            gap: 15px; 
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .controls label { font-size: 13px; color: #555; font-weight: 500; }
+        .controls input[type="date"] { 
+            padding: 6px 10px; 
+            border: 1px solid #ccc; 
+            border-radius: 4px; 
+            font-size: 14px; 
+        }
+        .controls button { 
+            padding: 7px 14px; 
+            background: #3b82f6; 
+            color: white; 
+            border: none; 
+            border-radius: 4px; 
+            cursor: pointer; 
+            font-size: 13px;
+        }
+        .controls button:hover { background: #2563eb; }
+        .week-nav button {
+            padding: 6px 10px;
+            background: #e5e7eb;
+            color: #374151;
+            font-size: 12px;
+        }
+        .week-nav button:hover { background: #d1d5db; }
+        
+        .schedule-grid {
+            display: grid;
+            grid-template-columns: 140px repeat(5, 1fr);
+            gap: 1px;
+            background: #ddd;
+            margin: 15px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        
+        .grid-header {
+            background: #1e3a5f;
+            color: white;
+            padding: 10px 8px;
+            font-weight: 600;
+            font-size: 13px;
+            text-align: center;
+        }
+        .grid-header.tech-col { text-align: left; padding-left: 12px; }
+        
+        .tech-name {
+            background: #f0f0f0;
+            padding: 8px 12px;
+            font-weight: 600;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            border-right: 2px solid #1e3a5f;
+            border-bottom: 2px solid #0e0d0d;
+        }
+        
+        .day-cell {
+            background: white;
+            padding: 6px;
+            min-height: 80px;
+            font-size: 11px;
+            border-bottom: 2px solid #0e0d0d;
+        }
+        
+        .job-card {
+            background: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            padding: 6px 8px;
+            margin-bottom: 4px;
+        }
+        .job-card:last-child { margin-bottom: 0; }
+        .job-card:hover { background: #e8f4ff; border-color: #93c5fd; }
+        
+        .job-site { font-weight: 600; color: #1f2937; margin-bottom: 2px; }
+        .job-wo { color: #6b7280; font-size: 10px; }
+        .job-city { color: #6b7280; font-size: 10px; }
+        
+        .no-jobs { color: #9ca3af; font-style: italic; padding: 10px; text-align: center; }
+        .loading { padding: 40px; text-align: center; color: #666; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <img src="/static/logo.png" alt="CGRS" class="logo">
+        <h1>Schedule Viewer</h1>
+    </div>
+    
+    <div class="controls">
+        <label>Week of:</label>
+        <input type="date" id="week-date">
+        <div class="week-nav">
+            <button onclick="changeWeek(-1)">← Prev</button>
+            <button onclick="goToThisWeek()">This Week</button>
+            <button onclick="changeWeek(1)">Next →</button>
+        </div>
+    </div>
+    
+    <div id="schedule-container">
+        <div class="loading">Loading...</div>
+    </div>
+    
+    <script>
+        let technicians = [];
+        let currentMonday = null;
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            goToThisWeek();
+            loadTechnicians().then(() => loadSchedule());
+        });
+        
+        function getMonday(d) {
+            const date = new Date(d);
+            const day = date.getDay();
+            const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+            return new Date(date.setDate(diff));
+        }
+        
+        function formatDate(date) {
+            return date.toISOString().split('T')[0];
+        }
+        
+        function goToThisWeek() {
+            currentMonday = getMonday(new Date());
+            document.getElementById('week-date').value = formatDate(currentMonday);
+            if (technicians.length > 0) loadSchedule();
+        }
+        
+        function changeWeek(offset) {
+            const dateInput = document.getElementById('week-date');
+            const current = new Date(dateInput.value + 'T00:00:00');
+            current.setDate(current.getDate() + (offset * 7));
+            currentMonday = getMonday(current);
+            dateInput.value = formatDate(currentMonday);
+            loadSchedule();
+        }
+        
+        async function loadTechnicians() {
+            try {
+                const res = await fetch('/api/technicians/all');
+                const data = await res.json();
+                technicians = (data.technicians || []).filter(t => t.active);
+            } catch (e) {
+                console.error('Error loading technicians:', e);
+            }
+        }
+        
+        async function loadSchedule() {
+            const dateInput = document.getElementById('week-date').value;
+            if (!dateInput) return;
+            
+            currentMonday = getMonday(new Date(dateInput + 'T00:00:00'));
+            const weekStart = formatDate(currentMonday);
+            
+            document.getElementById('schedule-container').innerHTML = '<div class="loading">Loading...</div>';
+            
+            try {
+                const res = await fetch(`/api/schedule/week-all?week_start=${weekStart}`);
+                const data = await res.json();
+                renderGrid(data.scheduled_jobs || []);
+            } catch (e) {
+                console.error('Error:', e);
+                document.getElementById('schedule-container').innerHTML = '<div class="loading">Error loading schedule</div>';
+            }
+        }
+        
+        function renderGrid(jobs) {
+            const days = [];
+            for (let i = 0; i < 5; i++) {
+                const d = new Date(currentMonday);
+                d.setDate(currentMonday.getDate() + i);
+                days.push({
+                    date: formatDate(d),
+                    label: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'][i] + ' ' + (d.getMonth()+1) + '/' + d.getDate()
+                });
+            }
+            
+            const jobMap = {};
+            jobs.forEach(job => {
+                const key = `${job.technician_id}-${job.date}`;
+                if (!jobMap[key]) jobMap[key] = [];
+                jobMap[key].push(job);
+            });
+            
+            let html = '<div class="schedule-grid">';
+            
+            // Header row
+            html += '<div class="grid-header tech-col">Technician</div>';
+            days.forEach(day => {
+                html += `<div class="grid-header">${day.label}</div>`;
+            });
+            
+            // Tech rows
+            technicians.forEach(tech => {
+                html += `<div class="tech-name">${tech.name}</div>`;
+                
+                days.forEach(day => {
+                    const key = `${tech.technician_id}-${day.date}`;
+                    const dayJobs = jobMap[key] || [];
+                    
+                    html += '<div class="day-cell">';
+                    if (dayJobs.length === 0) {
+                        html += '<div class="no-jobs">-</div>';
+                    } else {
+                        dayJobs.forEach(job => {
+                            html += `<div class="job-card">
+                                <div class="job-site">${job.site_name || 'Unknown'}</div>
+                                <div class="job-wo">WO# ${job.work_order}</div>
+                                <div class="job-city">${job.site_city || ''}</div>
+                            </div>`;
+                        });
+                    }
+                    html += '</div>';
+                });
+            });
+            
+            html += '</div>';
+            document.getElementById('schedule-container').innerHTML = html;
+        }
+    </script>
+</body>
+</html>

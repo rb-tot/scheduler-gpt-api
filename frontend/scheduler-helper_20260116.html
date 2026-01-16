@@ -1328,7 +1328,8 @@
             return R * c;
         }
         
-        // Unified queue for all changes - using pendingChanges (declared later)
+        // Queue for batch assignments
+        let assignmentQueue = [];
         
         function addToQueue(workOrder, techId, dateStr) {
             const job = unscheduledJobs.find(j => j.work_order === workOrder);
@@ -1337,38 +1338,113 @@
             if (!job || !tech) return;
             
             // Check if already in queue
-            if (pendingChanges.some(c => c.work_order === workOrder && c.type === 'assign')) {
+            if (assignmentQueue.some(a => a.work_order === workOrder)) {
                 alert('Job already in queue');
                 return;
             }
             
-            pendingChanges.push({
-                type: 'assign',
+            assignmentQueue.push({
                 work_order: workOrder,
                 technician_id: techId,
                 date: dateStr,
                 site_name: job.site_name,
-                tech_name: tech.name,
-                label: `→ ${tech.name.split(' ')[0]} (${dateStr})`
+                tech_name: tech.name
             });
             
-            updatePendingChangesDisplay();
+            updateQueueDisplay();
             closeDetailPanel();
         }
         
         function removeFromQueue(workOrder) {
-            pendingChanges = pendingChanges.filter(c => !(c.work_order === workOrder && c.type === 'assign'));
-            updatePendingChangesDisplay();
+            assignmentQueue = assignmentQueue.filter(a => a.work_order !== workOrder);
+            updateQueueDisplay();
         }
         
-        // updateQueueDisplay removed - using unified pendingChanges panel
+        function updateQueueDisplay() {
+            let queueHtml = document.getElementById('queue-panel');
+            if (!queueHtml) {
+                // Create queue panel if it doesn't exist
+                const panel = document.createElement('div');
+                panel.id = 'queue-panel';
+                panel.style.cssText = 'position: fixed; bottom: 0; left: 0; right: 0; background: #1e3a5f; color: white; padding: 10px 20px; z-index: 1002; display: none;';
+                panel.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <strong>Assignment Queue:</strong> <span id="queue-count">0</span> jobs
+                            <span id="queue-items" style="margin-left: 15px; font-size: 12px;"></span>
+                        </div>
+                        <div>
+                            <button onclick="clearQueue()" style="padding: 6px 12px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px;">Clear</button>
+                            <button onclick="saveAllAssignments()" style="padding: 6px 12px; background: #22c55e; color: white; border: none; border-radius: 4px; cursor: pointer;">Save All</button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(panel);
+                queueHtml = panel;
+            }
+            
+            if (assignmentQueue.length === 0) {
+                queueHtml.style.display = 'none';
+            } else {
+                queueHtml.style.display = 'block';
+                document.getElementById('queue-count').textContent = assignmentQueue.length;
+                
+                const itemsHtml = assignmentQueue.map(a => 
+                    `<span style="background: #374151; padding: 2px 8px; border-radius: 4px; margin-right: 5px;">
+                        ${a.site_name.substring(0, 15)}... → ${a.tech_name.split(' ')[0]} (${a.date})
+                        <span onclick="removeFromQueue(${a.work_order})" style="cursor: pointer; margin-left: 5px;">×</span>
+                    </span>`
+                ).join('');
+                document.getElementById('queue-items').innerHTML = itemsHtml;
+            }
+        }
         
         function clearQueue() {
-            pendingChanges = pendingChanges.filter(c => c.type !== 'assign');
-            updatePendingChangesDisplay();
+            assignmentQueue = [];
+            updateQueueDisplay();
         }
         
-        // saveAllAssignments removed - handled by unified saveAllChanges
+        async function saveAllAssignments() {
+            if (assignmentQueue.length === 0) {
+                alert('No jobs in queue');
+                return;
+            }
+            
+            let successCount = 0;
+            let errors = [];
+            
+            for (const assignment of assignmentQueue) {
+                try {
+                    const response = await fetch('/api/schedule/assign', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            work_order: assignment.work_order,
+                            technician_id: assignment.technician_id,
+                            date: assignment.date
+                        })
+                    });
+                    
+                    const result = await response.json();
+                    if (result.success) {
+                        successCount++;
+                    } else {
+                        errors.push(`${assignment.site_name}: ${result.errors?.join(', ') || 'Unknown error'}`);
+                    }
+                } catch (error) {
+                    errors.push(`${assignment.site_name}: ${error.message}`);
+                }
+            }
+            
+            if (errors.length > 0) {
+                alert(`Saved ${successCount} jobs.\n\nErrors:\n${errors.join('\n')}`);
+            } else {
+                alert(`Successfully saved ${successCount} jobs!`);
+            }
+            
+            clearQueue();
+            loadData(); // Reload to show updated schedule
+        }
         
         async function assignJob(workOrder, techId) {
             // Legacy function - now uses queue
@@ -2012,30 +2088,26 @@
             }
             
             const { route, tech } = window.currentBuiltRoute;
-            let addedCount = 0;
             
             route.forEach(day => {
                 if (day.timeOff) return;
                 
                 day.jobs.forEach(job => {
                     // Check if already in queue
-                    if (!pendingChanges.some(c => c.work_order === job.work_order && c.type === 'assign')) {
-                        pendingChanges.push({
-                            type: 'assign',
+                    if (!assignmentQueue.some(a => a.work_order === job.work_order)) {
+                        assignmentQueue.push({
                             work_order: job.work_order,
                             technician_id: tech.technician_id,
                             date: day.date,
                             site_name: job.site_name,
-                            tech_name: tech.name,
-                            label: `→ ${tech.name.split(' ')[0]} (${day.date})`
+                            tech_name: tech.name
                         });
-                        addedCount++;
                     }
                 });
             });
             
-            updatePendingChangesDisplay();
-            alert(`Added ${addedCount} jobs to queue`);
+            updateQueueDisplay();
+            alert(`Added ${assignmentQueue.length} jobs to queue`);
         }
         
         async function showHistoricalRoutes() {
@@ -2572,19 +2644,17 @@
         function addFillJobToQueue(workOrder, siteName, techId, dateStr) {
             const tech = technicians.find(t => t.technician_id === techId);
             
-            if (!pendingChanges.some(c => c.work_order === workOrder && c.type === 'assign')) {
-                pendingChanges.push({
-                    type: 'assign',
+            if (!assignmentQueue.some(a => a.work_order === workOrder)) {
+                assignmentQueue.push({
                     work_order: workOrder,
                     technician_id: techId,
                     date: dateStr,
                     site_name: siteName,
-                    tech_name: tech?.name || 'Unknown',
-                    label: `→ ${tech?.name?.split(' ')[0] || 'Unknown'} (${dateStr})`
+                    tech_name: tech?.name || 'Unknown'
                 });
             }
             
-            updatePendingChangesDisplay();
+            updateQueueDisplay();
             
             // Remove the button or mark as added
             event.target.textContent = '✓ Added';
@@ -2712,7 +2782,7 @@
             if (!panel) {
                 panel = document.createElement('div');
                 panel.id = 'pending-changes-panel';
-                panel.style.cssText = 'position: fixed; top: 100px; right: 10px; width: 300px; max-height: 80vh; background: #1e3a5f; color: white; padding: 15px; z-index: 1003; display: none; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); overflow-y: auto;';
+                panel.style.cssText = 'position: fixed; top: 100px; right: 10px; width: 280px; max-height: 80vh; background: #1e3a5f; color: white; padding: 15px; z-index: 1003; display: none; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); overflow-y: auto;';
                 document.body.appendChild(panel);
             }
             
@@ -2723,56 +2793,23 @@
             
             panel.style.display = 'block';
             
-            // Separate by type for summary
-            const assigns = pendingChanges.filter(c => c.type === 'assign');
-            const mods = pendingChanges.filter(c => c.type !== 'assign');
-            
-            const changesHtml = pendingChanges.map((c, i) => {
-                // Color code by type
-                let bgColor = '#374151';
-                let icon = '✏️';
-                if (c.type === 'assign') {
-                    bgColor = '#065f46'; // Dark green for new assignments
-                    icon = '➕';
-                } else if (c.type === 'unschedule') {
-                    bgColor = '#7f1d1d'; // Dark red for unschedule
-                    icon = '🗑️';
-                } else if (c.type === 'date') {
-                    icon = '📅';
-                } else if (c.type === 'tech') {
-                    icon = '👷';
-                } else if (c.type === 'secondary') {
-                    icon = '👥';
-                }
-                
-                return `<div style="background: ${bgColor}; padding: 8px 10px; border-radius: 4px; margin-bottom: 6px; font-size: 11px; display: flex; justify-content: space-between; align-items: center; gap: 8px;">
-                    <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                        ${icon} ${c.site_name.substring(0, 16)}... ${c.label}
-                    </span>
-                    <span onclick="removeFromPendingChanges(${i})" style="cursor: pointer; font-weight: bold; color: #fca5a5;">×</span>
-                </div>`;
-            }).join('');
-            
-            // Build summary line
-            let summary = `📋 Queue (${pendingChanges.length})`;
-            if (assigns.length > 0 && mods.length > 0) {
-                summary += ` - ${assigns.length} new, ${mods.length} changes`;
-            } else if (assigns.length > 0) {
-                summary += ` - ${assigns.length} new assignments`;
-            } else {
-                summary += ` - ${mods.length} changes`;
-            }
+            const changesHtml = pendingChanges.map((c, i) => 
+                `<div style="background: #374151; padding: 8px 10px; border-radius: 4px; margin-bottom: 6px; font-size: 11px; display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                    <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${c.site_name.substring(0, 18)}... → ${c.label}</span>
+                    <span onclick="removeFromPendingChanges(${i})" style="cursor: pointer; font-weight: bold; color: #ef4444;">×</span>
+                </div>`
+            ).join('');
             
             panel.innerHTML = `
                 <div style="display: flex; flex-direction: column; gap: 10px;">
                     <div style="font-weight: bold; font-size: 14px; border-bottom: 1px solid #4b5563; padding-bottom: 8px;">
-                        ${summary}
+                        📋 Pending Changes (${pendingChanges.length})
                     </div>
                     <div style="max-height: 50vh; overflow-y: auto;">
                         ${changesHtml}
                     </div>
                     <div style="display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid #4b5563;">
-                        <button onclick="saveAllChanges()" style="padding: 10px 12px; background: #22c55e; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">✓ Save All (${pendingChanges.length})</button>
+                        <button onclick="saveAllChanges()" style="padding: 10px 12px; background: #22c55e; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">✓ Save All Changes</button>
                         <button onclick="clearPendingChanges()" style="padding: 8px 12px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer;">Clear All</button>
                     </div>
                 </div>
@@ -2797,17 +2834,7 @@
                 try {
                     let response;
                     
-                    if (change.type === 'assign') {
-                        response = await fetch('/api/schedule/assign', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                work_order: change.work_order,
-                                technician_id: change.technician_id,
-                                date: change.date
-                            })
-                        });
-                    } else if (change.type === 'unschedule') {
+                    if (change.type === 'unschedule') {
                         response = await fetch('/api/schedule/unschedule', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },

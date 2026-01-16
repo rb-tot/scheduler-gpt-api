@@ -44,7 +44,7 @@ def serve_app():
         "endpoints": {
             "technicians": f"{BASE_URL}/api/technicians/all",
             "jobs": f"{BASE_URL}/api/jobs/unscheduled",
-            "schedule": f"{BASE_URL}/api/schedule/week"
+            "schedule": f"{BASE_URL}/api/schedule/week-all"
         }
     }
 
@@ -58,216 +58,298 @@ def verify_auth(x_api_key: Optional[str] = Header(None, alias="X-API-Key")):
 # ============================================================================
 # MODELS
 # ============================================================================
+class SiteVisitWindowResponse(BaseModel):
+    site_id: int
+    site_name: Optional[str]
+    visit_cycle: Optional[str]
+    last_visit_date: Optional[str]
+    last_visit_source: Optional[str]
+    earliest_schedule: Optional[str]
+    optimal_target: Optional[str]
+    latest_schedule: Optional[str]
+    days_since_last_visit: Optional[int]
+    window_status: Optional[str]
+    scheduling_recommendation: Optional[str]
+
+class UpdateVisitCycleRequest(BaseModel):
+    site_id: int
+    visit_cycle: str  # 'monthly', 'quarterly', 'annual', 'on-demand', or null
+
+@app.get("/api/sites/visit-window/{site_id}")
+def get_site_visit_window(site_id: int):
+    """
+    Get the visit window for a specific site.
+    Returns scheduling window information based on last visit.
+    """
+    try:
+        sb = supabase_client()
+        
+        # Call the database function
+        result = sb.rpc('get_site_visit_window', {'p_site_id': site_id}).execute()
+        
+        if not result.data:
+            # Site might not have a visit_cycle set
+            # Return basic info from sites table
+            site = sb.table('sites').select('*').eq('site_id', site_id).execute()
+            if site.data:
+                return {
+                    "site_id": site_id,
+                    "site_name": site.data[0].get('site_name'),
+                    "visit_cycle": None,
+                    "window_status": "not_tracked",
+                    "scheduling_recommendation": "Site not set up for recurring visits"
+                }
+            raise HTTPException(404, f"Site {site_id} not found")
+        
+        return result.data[0]
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting site visit window: {e}")
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/sites/visit-windows")
+def get_all_site_visit_windows(
+    window_status: Optional[str] = Query(None, description="Filter by status: too_soon, optimal, urgent, overdue, unknown"),
+    within_days: int = Query(30, description="Show sites due within this many days"),
+    include_overdue: bool = Query(True, description="Include overdue sites")
+):
+    """
+    Get visit windows for all recurring sites.
+    Useful for planning and identifying sites that need attention.
+    """
+    try:
+        sb = supabase_client()
+        
+        # First, refresh all windows
+        sb.rpc('update_site_visit_windows').execute()
+        
+        # Build query
+        query = sb.table('site_visit_windows').select('*')
+        
+        if window_status:
+            query = query.eq('window_status', window_status)
+        
+        # Order by urgency
+        query = query.order('latest_schedule')
+        
+        result = query.execute()
+        
+        # Filter by within_days if not filtering by status
+        if not window_status and result.data:
+            from datetime import datetime, timedelta
+            cutoff_date = (datetime.now().date() + timedelta(days=within_days)).isoformat()
+            filtered = []
+            for row in result.data:
+                # Include if within date range OR overdue/urgent
+                if row.get('latest_schedule') and row['latest_schedule'] <= cutoff_date:
+                    filtered.append(row)
+                elif include_overdue and row.get('window_status') in ('overdue', 'urgent', 'unknown'):
+                    filtered.append(row)
+            result.data = filtered
+        
+        return {
+            "success": True,
+            "count": len(result.data),
+            "windows": result.data
+        }
+        
+    except Exception as e:
+        print(f"Error getting site visit windows: {e}")
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/sites/needing-visits")
+def get_sites_needing_visits(
+    within_days: int = Query(14, description="Days to look ahead"),
+    include_overdue: bool = Query(True)
+):
+    """
+    Get list of sites that need to be scheduled soon.
+    Calls the database function for efficient querying.
+    """
+    try:
+        sb = supabase_client()
+        
+        result = sb.rpc('get_sites_needing_visits', {
+            'p_within_days': within_days,
+            'p_include_overdue': include_overdue
+        }).execute()
+        
+        return {
+            "success": True,
+            "count": len(result.data) if result.data else 0,
+            "sites": result.data or []
+        }
+        
+    except Exception as e:
+        print(f"Error getting sites needing visits: {e}")
+        raise HTTPException(500, str(e))
+
+
+@app.post("/api/sites/visit-cycle")
+def update_site_visit_cycle(request: UpdateVisitCycleRequest):
+    """
+    Set or update the visit cycle for a site.
+    Valid values: 'monthly', 'quarterly', 'annual', 'on-demand', null
+    """
+    try:
+        sb = supabase_client()
+        
+        # Validate visit_cycle value
+        valid_cycles = ['monthly', 'quarterly', 'annual', 'on-demand', None, '']
+        if request.visit_cycle not in valid_cycles:
+            raise HTTPException(400, f"Invalid visit_cycle. Must be one of: {valid_cycles}")
+        
+        # Update the sites table
+        cycle_value = request.visit_cycle if request.visit_cycle else None
+        result = sb.table('sites')\
+            .update({'visit_cycle': cycle_value})\
+            .eq('site_id', request.site_id)\
+            .execute()
+        
+        if not result.data:
+            raise HTTPException(404, f"Site {request.site_id} not found")
+        
+        # Refresh the visit window for this site
+        sb.rpc('update_site_visit_windows', {'p_site_ids': [request.site_id]}).execute()
+        
+        return {
+            "success": True,
+            "site_id": request.site_id,
+            "visit_cycle": cycle_value,
+            "message": f"Visit cycle updated to {cycle_value or 'not tracked'}"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error updating site visit cycle: {e}")
+        raise HTTPException(500, str(e))
+
+
+@app.post("/api/sites/refresh-windows")
+def refresh_site_visit_windows(site_ids: Optional[List[int]] = None):
+    """
+    Manually refresh visit windows for specific sites or all sites.
+    Useful after bulk imports or manual data corrections.
+    """
+    try:
+        sb = supabase_client()
+        
+        if site_ids:
+            result = sb.rpc('update_site_visit_windows', {'p_site_ids': site_ids}).execute()
+        else:
+            result = sb.rpc('update_site_visit_windows').execute()
+        
+        return {
+            "success": True,
+            "result": result.data[0] if result.data else {"sites_updated": 0, "sites_skipped": 0}
+        }
+        
+    except Exception as e:
+        print(f"Error refreshing windows: {e}")
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/sites/visit-windows/bulk")
+def get_bulk_visit_windows(site_ids: List[int] = Query(...)):
+    """
+    Get visit windows for multiple specific sites at once.
+    Useful for map popups when loading multiple markers.
+    """
+    try:
+        sb = supabase_client()
+        
+        if not site_ids:
+            return {"success": True, "windows": {}}
+        
+        # Refresh windows for these sites
+        sb.rpc('update_site_visit_windows', {'p_site_ids': site_ids}).execute()
+        
+        # Get the windows
+        result = sb.table('site_visit_windows')\
+            .select('*')\
+            .in_('site_id', site_ids)\
+            .execute()
+        
+        # Return as dictionary keyed by site_id for easy frontend lookup
+        windows_dict = {row['site_id']: row for row in (result.data or [])}
+        
+        return {
+            "success": True,
+            "windows": windows_dict
+        }
+        
+    except Exception as e:
+        print(f"Error getting bulk windows: {e}")
+        raise HTTPException(500, str(e))
+
+
+# ============================================================================
+# HELPER: Add visit window info to job queries
+# ============================================================================
+# You can modify existing job endpoints to include visit window info
+# Example modification for get_unscheduled_jobs:
+
+def enrich_jobs_with_visit_windows(jobs: List[Dict], sb) -> List[Dict]:
+    """
+    Helper function to add visit window info to a list of jobs.
+    Call this after fetching jobs to add window data.
+    """
+    if not jobs:
+        return jobs
+    
+    # Get unique site_ids
+    site_ids = list(set(j.get('site_id') for j in jobs if j.get('site_id')))
+    
+    if not site_ids:
+        return jobs
+    
+    # Fetch windows for these sites
+    try:
+        result = sb.table('site_visit_windows')\
+            .select('site_id, visit_cycle, last_visit_date, window_status, earliest_schedule, latest_schedule, days_since_last_visit')\
+            .in_('site_id', site_ids)\
+            .execute()
+        
+        # Create lookup dict
+        windows = {row['site_id']: row for row in (result.data or [])}
+        
+        # Enrich jobs
+        for job in jobs:
+            site_id = job.get('site_id')
+            if site_id and site_id in windows:
+                window = windows[site_id]
+                job['visit_window'] = {
+                    'visit_cycle': window.get('visit_cycle'),
+                    'last_visit_date': window.get('last_visit_date'),
+                    'window_status': window.get('window_status'),
+                    'earliest_schedule': window.get('earliest_schedule'),
+                    'latest_schedule': window.get('latest_schedule'),
+                    'days_since_last_visit': window.get('days_since_last_visit')
+                }
+            else:
+                job['visit_window'] = None
+                
+    except Exception as e:
+        print(f"Warning: Could not enrich jobs with visit windows: {e}")
+        # Don't fail - just return jobs without window info
+    
+    return jobs
+
 class AssignJobRequest(BaseModel):
     work_order: int
     technician_id: int
     date: str  # YYYY-MM-DD
     start_time: Optional[str] = None
 
-class OptimizeDayRequest(BaseModel):
-    technician_id: int
-    date: str
-
-class BulkAssignRequest(BaseModel):
-    mode: str  # "urgent" | "fill_capacity" | "monthly_spread"
-    technician_ids: Optional[List[int]] = None
-    target_utilization: Optional[float] = 0.8
-# ----------------------------------------------------------------------------
-# REQUEST/RESPONSE MODELS
-# ----------------------------------------------------------------------------
-
-class ScheduleWeekRequest(BaseModel):
-    """Request to schedule a week using geographic-first approach"""
-    tech_ids: List[int]  # Can be multiple techs (we'll loop through them)
-    region_names: List[str]  # User-selected regions to focus on
-    week_start: str  # YYYY-MM-DD format
-    sow_filter: Optional[str] = None  # Filter by SOW (e.g., "NT")
-    target_weekly_hours: int = 40
-
-class ScheduleWeekResponse(BaseModel):
-    """Response with full week schedule"""
-    success: bool
-    tech_schedules: List[dict]  # One per tech
-    total_jobs_scheduled: int
-    total_hours_scheduled: float
-    warnings: List[str]
-    suggestions: List[str]
-
 frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend")
 app.mount("/static", StaticFiles(directory=frontend_path), name="static")
 
 frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend")
-
-# ============================================================================
-# ADDITIONAL TECHNICIANS ENDPOINTS
-# ============================================================================
-
-class AddAdditionalTechRequest(BaseModel):
-    work_order: int
-    technician_id: int
-
-@app.post("/api/scheduled-jobs/add-additional-tech")
-def add_additional_tech(request: AddAdditionalTechRequest):
-    """Add an additional technician to a scheduled job"""
-    try:
-        # Check if job exists
-        job = sb_select("scheduled_jobs", filters=[
-            ("work_order", "eq", request.work_order)
-        ])
-        
-        if not job:
-            raise HTTPException(404, f"Work order {request.work_order} not found")
-        
-        # Don't allow adding the primary tech as additional
-        if job[0]['technician_id'] == request.technician_id:
-            raise HTTPException(400, "Cannot add primary tech as additional tech")
-        
-        # Check if already exists
-        existing = sb_select("scheduled_job_additional_techs", filters=[
-            ("work_order", "eq", request.work_order),
-            ("technician_id", "eq", request.technician_id)
-        ])
-        
-        if existing:
-            raise HTTPException(400, "Tech already added to this job")
-        
-        # Insert additional tech
-        sb_insert("scheduled_job_additional_techs", {
-            "work_order": request.work_order,
-            "technician_id": request.technician_id
-        })
-        
-        return {
-            "success": True,
-            "message": f"Added tech {request.technician_id} to work order {request.work_order}",
-            "primary_tech": job[0]['assigned_tech_name']
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f" Error adding additional tech: {e}")
-        raise HTTPException(500, str(e))
-
-@app.delete("/api/scheduled-jobs/remove-additional-tech")
-def remove_additional_tech(work_order: int, technician_id: int):
-    """Remove an additional technician from a scheduled job"""
-    try:
-        from supabase_client import supabase_client
-        sb = supabase_client()
-        
-        result = sb.table("scheduled_job_additional_techs")\
-            .delete()\
-            .eq("work_order", work_order)\
-            .eq("technician_id", technician_id)\
-            .execute()
-        
-        return {
-            "success": True,
-            "message": f"Removed tech {technician_id} from work order {work_order}"
-        }
-    except Exception as e:
-        print(f" Error removing additional tech: {e}")
-        raise HTTPException(500, str(e))
-
-@app.get("/api/scheduled-jobs/additional-techs")
-def get_all_additional_techs(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None
-):
-    """Get all additional tech assignments (for export or display)"""
-    try:
-        # Get additional tech records
-        addl_techs = sb_select("scheduled_job_additional_techs")
-        
-        if not addl_techs:
-            return {
-                "success": True,
-                "additional_techs": []
-            }
-        
-        # Get related scheduled jobs and tech names
-        result = []
-        for addl in addl_techs:
-            # Get the scheduled job details
-            job = sb_select("scheduled_jobs", filters=[
-                ("work_order", "eq", addl['work_order'])
-            ])
-            
-            if not job:
-                continue
-                
-            job = job[0]
-            
-            # Apply date filters if provided
-            if start_date and job['date'] < start_date:
-                continue
-            if end_date and job['date'] > end_date:
-                continue
-            
-            # Get additional tech name
-            tech = sb_select("technicians", filters=[
-                ("technician_id", "eq", addl['technician_id'])
-            ])
-            
-            if not tech:
-                continue
-                
-            result.append({
-                "work_order": addl['work_order'],
-                "technician_id": addl['technician_id'],
-                "date": job['date'],
-                "site_name": job.get('site_name'),
-                "duration": job.get('duration'),
-                "primary_tech": job.get('assigned_tech_name'),
-                "additional_tech_name": tech[0]['name']
-            })
-        
-        return {
-            "success": True,
-            "additional_techs": result
-        }
-    except Exception as e:
-        print(f"Error getting additional techs: {e}")
-        return {
-            "success": False,
-            "additional_techs": [],
-            "error": str(e)
-        }
-
-@app.get("/api/scheduled-jobs/{work_order}/additional-techs")
-def get_additional_techs_for_job(work_order: int):
-    """Get all additional techs for a specific job"""
-    try:
-        addl_techs = sb_select("scheduled_job_additional_techs", filters=[
-            ("work_order", "eq", work_order)
-        ])
-        
-        if not addl_techs:
-            return {
-                "success": True,
-                "work_order": work_order,
-                "additional_techs": []
-            }
-        
-        result = []
-        for addl in addl_techs:
-            tech = sb_select("technicians", filters=[
-                ("technician_id", "eq", addl['technician_id'])
-            ])
-            if tech:
-                result.append({
-                    "technician_id": addl['technician_id'],
-                    "name": tech[0]['name']
-                })
-        
-        return {
-            "success": True,
-            "work_order": work_order,
-            "additional_techs": result
-        }
-    except Exception as e:
-        print(f" Error getting additional techs for job: {e}")
-        raise HTTPException(500, str(e))
 
 @app.get("/tech-manager", response_class=HTMLResponse)
 def serve_tech_manager():
@@ -375,6 +457,16 @@ def serve_current_schedule():
         with open(html_path, "r", encoding="utf-8") as f:
             return f.read()
     raise HTTPException(404, "current-schedule.html not found")
+
+@app.get("/schedule-viewer", response_class=HTMLResponse)
+def serve_schedule_viewer():
+    html_path = os.path.join(frontend_dir, "schedule-viewer.html")
+    if os.path.exists(html_path):
+        with open(html_path, "r", encoding="utf-8") as f:
+            return f.read()
+    raise HTTPException(404, "schedule-viewer.html not found")
+
+
 # ============================================================================
 # CORE ENDPOINTS
 # ============================================================================
@@ -485,304 +577,8 @@ def get_unscheduled_jobs(
     }
 
 # ----------------------------------------------------------------------------
-# NEW ENDPOINT
-# ----------------------------------------------------------------------------
-
-@app.post("/api/schedule/generate-week-smart")
-def generate_week_smart_schedule(
-    req: ScheduleWeekRequest,
- ):
-        # Check for existing scheduled jobs
-    existing_jobs = sb_select("scheduled_jobs", filters=[
-        ("technician_id", "in", req.tech_ids),
-        ("date", "gte", req.week_start),
-        ("date", "lte", (datetime.fromisoformat(req.week_start) + timedelta(days=4)).isoformat())
-    ])
-
-    if existing_jobs:
-        logger.warning(f"Found {len(existing_jobs)} existing jobs for techs {req.tech_ids} in week {req.week_start}")
-        # Either exclude these dates/times or return a warning
-    
-    
-    
-    """
-    ÃƒÂ°Ã…Â¸Ã¢â‚¬Â Ã¢â‚¬Â¢ SMART SCHEDULER - Geographic-First Approach
-    
-    This endpoint:
-    1. Analyzes regions for job distribution
-    2. Picks best region to focus on
-    3. Schedules ALL jobs in that region (no wasted trips)
-    4. Optimizes routes within region
-    5. Calculates drive times and hotel stays
-    6. Suggests nearby regions if capacity not filled
-    
-    Example request:
-    {
-        "tech_ids": [7],
-        "region_names": ["CO_Denver_Metro", "CO_NoCo"],
-        "week_start": "2025-09-08",
-        "sow_filter": "NT",
-        "target_weekly_hours": 40
-    }
-    """
-    # Verify auth
-   
-    
-    try:
-        # Parse week start date
-        week_start = datetime.fromisoformat(req.week_start).date()
-        
-        # Schedule for each tech
-        tech_schedules = []
-        total_jobs = 0
-        total_hours = 0
-        all_warnings = []
-        all_suggestions = []
-        
-        for tech_id in req.tech_ids:
-            print(f"\n{'='*80}")
-            print(f"Scheduling Tech {tech_id}")
-            print(f"{'='*80}")
-            
-            result = sched_v5.schedule_week_geographic(
-                tech_id=tech_id,
-                region_names=req.region_names,
-                week_start=week_start,
-                sow_filter=req.sow_filter,
-                target_weekly_hours=req.target_weekly_hours
-            )
-            
-            if "error" in result:
-                all_warnings.append(f"Tech {tech_id}: {result['error']}")
-                continue
-            
-            tech_schedules.append(result)
-            total_jobs += result.get('jobs_scheduled', 0)
-            total_hours += result.get('total_hours', 0)
-            all_warnings.extend(result.get('warnings', []))
-            all_suggestions.extend(result.get('suggestions', []))
-        
-        return {
-            "success": True,
-            "tech_schedules": tech_schedules,
-            "total_jobs_scheduled": total_jobs,
-            "total_hours_scheduled": round(total_hours, 2),
-            "warnings": all_warnings,
-            "suggestions": all_suggestions
-        }
-        
-    except Exception as e:
-        import traceback
-        print(f"ERROR: {str(e)}")
-        print(traceback.format_exc())
-        
-        return {
-            "success": False,
-            "error": str(e),
-            "tech_schedules": [],
-            "total_jobs_scheduled": 0,
-            "total_hours_scheduled": 0,
-            "warnings": [str(e)],
-            "suggestions": []
-        }
-@app.post("/api/schedule/save")
-def save_schedule_to_database(
-    schedule_data: dict,
-    x_api_key: Optional[str] = Header(None, alias="X-API-Key")
-):
-    """
-    Save a generated schedule to the database
-    
-    Expects:
-    {
-        "tech_schedule": {...},  # The full schedule from generate-week-smart
-        "week_start": "2025-10-20"
-    }
-    """
-    verify_auth(x_api_key)
-    
-    try:
-        tech_schedule = schedule_data.get('tech_schedule')
-        week_start = schedule_data.get('week_start')
-        
-        if not tech_schedule or not week_start:
-            return {
-                "success": False,
-                "error": "Missing required fields: tech_schedule, week_start"
-            }
-        
-        tech_id = tech_schedule['tech_id']
-        tech_name = tech_schedule['tech_name']
-        
-        saved_jobs = []
-        work_orders_scheduled = []
-        
-        # Process each day
-        days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
-        for day in days:
-            day_schedule = tech_schedule['schedule'].get(day, {})
-            day_jobs = day_schedule.get('jobs', [])
-            
-            for job in day_jobs:
-                work_order = job['work_order']
-                
-                # Get job details from job_pool
-                job_details = sb_select("job_pool", filters=[
-                    ("work_order", "eq", work_order)
-                ])
-                
-                if not job_details:
-                    continue
-                
-                job_detail = job_details[0]
-                
-                # Create scheduled_jobs record
-                scheduled_record = {
-                    "work_order": work_order,
-                    "technician_id": tech_id,
-                    "assigned_tech_name": tech_name,
-                    "date": day_schedule['date'],
-                    "start_time": f"{day_schedule['date']}T{job.get('start_time')}:00" if job.get('start_time') else None,
-                    "end_time": None,  # Add this line too if you want to calculate end_time
-                    "site_name": job_detail.get('site_name'),
-                    "site_city": job_detail.get('site_city'),
-                    "site_state": job_detail.get('site_state'),
-                    "site_id": job_detail.get('site_id'),
-                    "duration": float(job['duration']),
-                    "sow_1": job['sow'],
-                    "due_date": job_detail.get('due_date'),
-                    "is_night_job": job_detail.get('night_test', False)
-                }
-                
-                saved_jobs.append(scheduled_record)
-                work_orders_scheduled.append(work_order)
-        
-        if not saved_jobs:
-            return {
-                "success": False,
-                "error": "No jobs to save"
-            }
-        
-        # Save to database
-        sb_insert("scheduled_jobs", saved_jobs)
-        
-        # Update job_pool status
-        for wo in work_orders_scheduled:
-            sb_update("job_pool", {"work_order": wo}, {"jp_status": "Scheduled"})
-        
-        return {
-            "success": True,
-            "jobs_saved": len(saved_jobs),
-            "work_orders": work_orders_scheduled,
-            "tech_id": tech_id,
-            "tech_name": tech_name,
-            "week_start": week_start
-        }
-        
-    except Exception as e:
-        import traceback
-        print(f"ERROR saving schedule: {str(e)}")
-        print(traceback.format_exc())
-        
-        return {
-            "success": False,
-            "error": str(e)
-        }
-# ----------------------------------------------------------------------------
-# HELPER ENDPOINT: Preview Region Analysis
-# ----------------------------------------------------------------------------
-
-@app.get("/api/schedule/analyze-regions")
-def analyze_regions_preview(
-    tech_id: int,
-    month_year: str,  # Format: "2025-09"
-    sow_filter: Optional[str] = None,
-
-):
-    """
-    Preview which regions have jobs for a tech in a given month
-    
-    Helps user decide which regions to include in schedule request
-    
-    Example: GET /api/schedule/analyze-regions?tech_id=7&month_year=2025-09
-    """
-    
-    
-    try:
-        # Parse month
-        year, month = map(int, month_year.split('-'))
-        month_start = date(year, month, 1)
-        
-        if month == 12:
-            month_end = date(year + 1, 1, 1) - timedelta(days=1)
-        else:
-            month_end = date(year, month + 1, 1) - timedelta(days=1)
-        
-        # Get region analysis
-        regions = sched_v5.analyze_regions_for_tech(
-            tech_id=tech_id,
-            month_start=month_start,
-            month_end=month_end,
-            sow_filter=sow_filter
-        )
-        
-        return {
-            "success": True,
-            "tech_id": tech_id,
-            "month": month_year,
-            "regions": regions
-        }
-        
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "regions": []
-        }
-
-# ----------------------------------------------------------------------------
 # SCHEDULE OPERATIONS
 # ----------------------------------------------------------------------------
-
-@app.get("/api/schedule/week")
-def get_tech_week_schedule(
-    tech_id: int,
-    week_start: str  # YYYY-MM-DD
-):
-    """Get a tech's schedule for one week"""
-    
-    week_start_date = datetime.fromisoformat(week_start).date()
-    week_end_date = week_start_date + timedelta(days=6)
-    
-    scheduled = sb_select("scheduled_jobs", filters=[
-        ("technician_id", "eq", tech_id),
-        ("date", "gte", str(week_start_date)),
-        ("date", "lte", str(week_end_date))
-    ])
-    
-    # Organize by day
-    by_day = {}
-    for i in range(7):
-        day = week_start_date + timedelta(days=i)
-        by_day[str(day)] = {
-            "date": str(day),
-            "day_name": day.strftime("%A"),
-            "jobs": [],
-            "total_hours": 0.0
-        }
-    
-    for job in scheduled:
-        day_key = job["date"]
-        if day_key in by_day:
-            by_day[day_key]["jobs"].append(job)
-            by_day[day_key]["total_hours"] += float(job.get("duration", 2))
-    
-    return {
-        "tech_id": tech_id,
-        "week_start": str(week_start_date),
-        "days": list(by_day.values())
-    }
-
 
 @app.get("/api/regions/analyze")
 def analyze_regions_for_tech(
@@ -806,16 +602,15 @@ def analyze_regions_for_tech(
     return {
         "regions": result.data or []
     }
-
-
 @app.get("/api/jobs/region")
 def get_jobs_in_region(
     tech_id: int,
     region: str,
     month_start: str,
-    month_end: str
+    month_end: str,
+    sow_filter: Optional[str] = None
 ):
-    """Get all jobs in a region for a tech"""
+    """Get all eligible jobs in a region for a technician"""
     sb = supabase_client()
     
     result = sb.rpc(
@@ -825,14 +620,19 @@ def get_jobs_in_region(
             'p_region_name': region,
             'p_month_start': month_start,
             'p_month_end': month_end,
-            'p_sow_filter': None
+            'p_sow_filter': sow_filter
         }
     ).execute()
     
+    jobs = result.data or []
+    print(f"  /api/jobs/region: tech={tech_id}, region={region}, found {len(jobs)} jobs")
+    
     return {
-        "jobs": result.data or []
+        "jobs": jobs,
+        "count": len(jobs),
+        "tech_id": tech_id,
+        "region": region
     }
-
 
 @app.get("/api/history/routes")
 def get_historical_routes(
@@ -1252,269 +1052,6 @@ def get_all_additional_techs(week_start: str = None):
         return {"success": False, "additional_techs": [], "error": str(e)}
 
 
-
-@app.get("/api/fill-day/suggestions")
-def get_fill_day_suggestions(
-    tech_id: int,
-    center_lat: float,
-    center_lon: float,
-    date: str,
-    remaining_hours: float,
-    month_start: str,
-    month_end: str
-):
-    """Get job suggestions to fill a tech's day - nearby jobs first, then corridor jobs"""
-    sb = supabase_client()
-    
-    suggestions = []
-    
-    # Get tech info for home location (for corridor)
-    tech = sb_select("technicians", filters=[("technician_id", "eq", tech_id)])
-    if not tech:
-        return {"suggestions": []}
-    tech = tech[0]
-    
-    # 1. Get nearby jobs (within 30 miles of center)
-    try:
-        nearby_result = sb.rpc('find_nearby_jobs', {
-            'center_lat': center_lat,
-            'center_lon': center_lon,
-            'radius_miles': 30,
-            'max_results': 20,
-            'p_tech_id': tech_id,
-            'p_schedule_date': date,
-            'filter_region': None
-        }).execute()
-        
-        if nearby_result.data:
-            for job in nearby_result.data:
-                if job.get('duration', 2) <= remaining_hours:
-                    job['suggestion_type'] = 'nearby'
-                    job['distance_miles'] = job.get('distance_miles', 0)
-                    suggestions.append(job)
-    except Exception as e:
-        print(f"Error getting nearby jobs: {e}")
-    
-    # 2. Get corridor jobs (along route from tech home to center)
-    try:
-        corridor_result = sb.rpc('find_jobs_along_route', {
-            'start_lat': tech['home_latitude'],
-            'start_lon': tech['home_longitude'],
-            'end_lat': center_lat,
-            'end_lon': center_lon,
-            'corridor_miles': 15,
-            'max_results': 15,
-            'p_tech_id': tech_id,
-            'p_schedule_date': date
-        }).execute()
-        
-        if corridor_result.data:
-            # Filter out jobs already in nearby list
-            nearby_work_orders = {j['work_order'] for j in suggestions}
-            for job in corridor_result.data:
-                if job['work_order'] not in nearby_work_orders and job.get('duration', 2) <= remaining_hours:
-                    job['suggestion_type'] = 'corridor'
-                    job['distance_miles'] = job.get('distance_from_start_miles', 0)
-                    suggestions.append(job)
-    except Exception as e:
-        print(f"Error getting corridor jobs: {e}")
-    
-    # Sort: nearby jobs first (by due date, then distance), then corridor jobs (by due date, then distance)
-    def sort_key(job):
-        type_order = 0 if job['suggestion_type'] == 'nearby' else 1
-        due_date = job.get('due_date', '9999-12-31')
-        distance = job.get('distance_miles', 999)
-        return (type_order, due_date, distance)
-    
-    suggestions.sort(key=sort_key)
-    
-    # Limit to 15
-    return {"suggestions": suggestions[:15]}
-
-# ----------------------------------------------------------------------------
-# SMART FEATURES
-# ----------------------------------------------------------------------------
-
-@app.get("/api/schedule/suggestions")
-def get_smart_suggestions(
-    tech_id: int,
-    date: str,
-    radius_miles: int = 50
-):
-    """Get smart job suggestions for a tech on a specific day"""
-    
-    # Get tech info
-    tech = sb_select("technicians", filters=[("technician_id", "eq", tech_id)])
-    if not tech:
-        raise HTTPException(404, "Tech not found")
-    tech = tech[0]
-    
-    # Get jobs already scheduled that day
-    scheduled = sb_select("scheduled_jobs", filters=[
-        ("technician_id", "eq", tech_id),
-        ("date", "eq", date)
-    ])
-    
-    if not scheduled:
-        return {"suggestions": [], "reason": "No jobs scheduled this day yet"}
-    
-    # Get unscheduled jobs
-    unscheduled = sb_select("job_pool", filters=[
-        ("jp_status", "in", ["Call", "Waiting to Schedule"])
-    ])
-    
-    suggestions = []
-    
-    # Find jobs near scheduled jobs
-    from scheduler_v5_geographic import haversine
-    
-    for sch in scheduled:
-        sch_job = sb_select("job_pool", filters=[("work_order", "eq", sch["work_order"])])
-        if not sch_job:
-            continue
-        sch_job = sch_job[0]
-        
-        for unsched in unscheduled:
-            # Check eligibility
-            elig = sb_select("job_technician_eligibility", filters=[
-                ("work_order", "eq", unsched["work_order"]),
-                ("technician_id", "eq", tech_id)
-            ])
-            if not elig:
-                continue
-            
-            # Calculate distance
-            distance = haversine(
-                sch_job["latitude"], sch_job["longitude"],
-                unsched["latitude"], unsched["longitude"]
-            )
-            
-            if distance <= radius_miles:
-                suggestions.append({
-                    "work_order": unsched["work_order"],
-                    "site_name": unsched["site_name"],
-                    "distance_miles": round(distance, 1),
-                    "duration": unsched.get("duration", 2),
-                    "reason": f"Only {distance:.1f} miles from WO {sch['work_order']}",
-                    "priority": unsched.get("jp_priority")
-                })
-    
-    # Sort by distance
-    suggestions.sort(key=lambda x: x["distance_miles"])
-    
-    return {"suggestions": suggestions[:10]}
-
-@app.post("/api/schedule/optimize-day")
-def optimize_day_route(req: OptimizeDayRequest):
-    """Reorder jobs on a day to minimize drive time"""
-    
-    # Get jobs for that day
-    jobs = sb_select("scheduled_jobs", filters=[
-        ("technician_id", "eq", req.technician_id),
-        ("date", "eq", req.date)
-    ])
-    
-    if len(jobs) < 2:
-        return {"optimized": False, "reason": "Need at least 2 jobs to optimize"}
-    
-    # Get tech home location
-    tech = sb_select("technicians", filters=[("technician_id", "eq", req.technician_id)])[0]
-    
-    # Simple nearest-neighbor optimization
-    from scheduler_utils import haversine
-    
-    # Get job details with locations
-    job_details = []
-    for j in jobs:
-        jp = sb_select("job_pool", filters=[("work_order", "eq", j["work_order"])])[0]
-        job_details.append({
-            **j,
-            "latitude": jp["latitude"],
-            "longitude": jp["longitude"]
-        })
-    
-    # Start from home
-    current_lat = tech["home_latitude"]
-    current_lon = tech["home_longitude"]
-    
-    optimized_order = []
-    remaining = job_details.copy()
-    
-    while remaining:
-        # Find nearest job
-        nearest = min(remaining, key=lambda j: haversine(
-            current_lat, current_lon, j["latitude"], j["longitude"]
-        ))
-        optimized_order.append(nearest)
-        remaining.remove(nearest)
-        current_lat = nearest["latitude"]
-        current_lon = nearest["longitude"]
-    
-    # Calculate savings
-    original_distance = sum(
-        haversine(job_details[i]["latitude"], job_details[i]["longitude"],
-                  job_details[i+1]["latitude"], job_details[i+1]["longitude"])
-        for i in range(len(job_details) - 1)
-    )
-    
-    optimized_distance = sum(
-        haversine(optimized_order[i]["latitude"], optimized_order[i]["longitude"],
-                  optimized_order[i+1]["latitude"], optimized_order[i+1]["longitude"])
-        for i in range(len(optimized_order) - 1)
-    )
-    
-    savings = original_distance - optimized_distance
-    
-    return {
-        "optimized": True,
-        "original_distance_miles": round(original_distance, 1),
-        "optimized_distance_miles": round(optimized_distance, 1),
-        "savings_miles": round(savings, 1),
-        "optimized_order": [j["work_order"] for j in optimized_order]
-    }
-
-# ----------------------------------------------------------------------------
-# BULK OPERATIONS
-# ----------------------------------------------------------------------------
-
-@app.post("/api/schedule/bulk-assign")
-def bulk_assign_jobs(req: BulkAssignRequest):
-    """Bulk assign jobs based on mode"""
-    
-    results = {"assigned": 0, "failed": 0, "details": []}
-    
-    if req.mode == "urgent":
-        # Assign all urgent/NOV jobs
-        urgent = sb_select("job_pool", filters=[
-            ("jp_status", "in", ["Call"]),
-            ("jp_priority", "in", ["NOV", "Urgent"])
-        ])
-        
-        for job in urgent:
-            # Find best tech using your existing scheduler
-            # (Simplified - would use full scheduler logic)
-            elig = sb_select("job_technician_eligibility", filters=[
-                ("work_order", "eq", job["work_order"])
-            ])
-            
-            if elig:
-                tech_id = elig[0]["technician_id"]
-                due_date = str(job["due_date"])
-                
-                try:
-                    assign_single_job(AssignJobRequest(
-                        work_order=job["work_order"],
-                        technician_id=tech_id,
-                        date=due_date
-                    ))
-                    results["assigned"] += 1
-                    results["details"].append(f"ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ WO {job['work_order']} ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Tech {tech_id}")
-                except Exception as e:
-                    results["failed"] += 1
-                    results["details"].append(f"ÃƒÂ¢Ã…â€œÃ¢â‚¬â€ WO {job['work_order']}: {str(e)}")
-    
-    return results
-
 @app.get("/api/regions/list")
 def get_regions_list():
    
@@ -1761,16 +1298,8 @@ def monthly_analysis(year: int, month: int):
                 'center_lng': region.get('center_longitude')
             }
         
-        # Helper function for distance calculation
-        def haversine(lat1, lon1, lat2, lon2):
-            from math import radians, sin, cos, sqrt, atan2
-            R = 3958.8  # Earth radius in miles
-            lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
-            dlat = lat2 - lat1
-            dlon = lon2 - lon1
-            a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
-            c = 2 * atan2(sqrt(a), sqrt(1-a))
-            return R * c
+        # Import haversine from scheduler_utils
+        from scheduler_utils import haversine
         
         # Calculate total work hours
         total_work_hours = sum(float(j.get("duration", 2)) for j in jobs)
@@ -2526,135 +2055,6 @@ async def preview_staging():
             "error": str(e)
         }
 
-# ============================================
-# VALIDATION HELPERS
-# ============================================
-
-@app.post("/api/validate-jobs")
-async def validate_jobs():
-    """
-    Run validation checks on current job pool
-    """
-    try:
-        from supabase_client import supabase_client
-        sb = supabase_client()
-        
-        issues = []
-        
-        # Check for jobs with no eligible techs
-        no_techs = sb.table('job_pool').select('work_order, site_name, sow_1').eq('tech_count', 0).execute()
-        if no_techs.data:
-            for job in no_techs.data:
-                issues.append({
-                    "type": "error",
-                    "job": job['work_order'],
-                    "message": f"No eligible techs for {job['site_name']} (SOW: {job['sow_1']})"
-                })
-        
-        # Check for missing regions
-        no_region = sb.table('job_pool').select('work_order, site_name').or_('region.is.null,region.eq.NULL').execute()
-        if no_region.data:
-            for job in no_region.data:
-                issues.append({
-                    "type": "warning",
-                    "job": job['work_order'],
-                    "message": f"No region assigned for {job['site_name']}"
-                })
-        
-        # Check for overdue unscheduled jobs
-        today = date.today().isoformat()
-        overdue = sb.table('job_pool').select('work_order, site_name, due_date').lt('due_date', today).is_('jp_status', 'Ready').execute()
-        if overdue.data:
-            for job in overdue.data:
-                issues.append({
-                    "type": "error",
-                    "job": job['work_order'],
-                    "message": f"{job['site_name']} is overdue (due: {job['due_date']})"
-                })
-        
-        return {
-            "issues_found": len(issues),
-            "issues": issues[:50],  # Limit to first 50 issues
-            "summary": {
-                "errors": len([i for i in issues if i["type"] == "error"]),
-                "warnings": len([i for i in issues if i["type"] == "warning"])
-            }
-        }
-        
-    except Exception as e:
-        print(f"Validation error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-@app.get("/api/test-supabase")
-async def test_supabase():
-    """Test if Supabase connection works"""
-    try:
-        from supabase_client import supabase_client
-        sb = supabase_client()
-        
-        # Try a simple query
-        result = sb.table('stg_job_pool').select('work_order').limit(1).execute()
-        
-        return {
-            "success": True,
-            "message": "Supabase connected",
-            "data": result.data
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
-@app.get("/api/test-rpc")
-async def test_rpc():
-    """Test if we can call ANY RPC function"""
-    try:
-        from supabase_client import supabase_client
-        sb = supabase_client()
-        
-        # Try to call a function that we know exists
-        result = sb.rpc('import_new_jobs').execute()
-        
-        return {"success": True, "result": "Function called"}
-    except Exception as e:
-        return {
-            "success": False, 
-            "error": str(e),
-            "details": {
-                "message": str(e),
-                "type": type(e).__name__
-            }
-        }
-@app.get("/api/test-functions")
-async def test_functions():
-    """Test each function individually"""
-    from supabase_client import supabase_client
-    sb = supabase_client()
-    
-    results = {}
-    
-    # Test 1: Can we call assign_regions?
-    try:
-        sb.rpc('assign_regions_to_jobs').execute()
-        results['assign_regions'] = "SUCCESS"
-    except Exception as e:
-        results['assign_regions'] = f"FAILED: {str(e)}"
-    
-    # Test 2: Can we call populate_eligibility?
-    try:
-        sb.rpc('populate_tech_eligibility').execute()
-        results['populate_eligibility'] = "SUCCESS"
-    except Exception as e:
-        results['populate_eligibility'] = f"FAILED: {str(e)}"
-    
-    # Test 3: Can we call import_new_jobs?
-    try:
-        sb.rpc('import_new_jobs').execute()
-        results['import_new_jobs'] = "SUCCESS"
-    except Exception as e:
-        results['import_new_jobs'] = f"FAILED: {str(e)}"
-    
-    return results
-
 # ============================================================================
 # TECHNICIAN CRUD OPERATIONS
 # ============================================================================
@@ -3014,6 +2414,93 @@ def get_tech_availability(tech_id: int, week_start: str):
         "week_start": week_start,
         "availability": availability
     }
+
+
+@app.get("/api/technicians/availability-batch")
+def get_all_techs_availability_batch(week_start: str):
+    """
+    Get availability for ALL active technicians in one call.
+    Returns nested dict: { availability: { tech_id: { day_name: {...} } } }
+    
+    This is much faster than calling /api/technicians/availability for each tech.
+    """
+    try:
+        from datetime import datetime, timedelta
+        
+        start_date = datetime.strptime(week_start, "%Y-%m-%d").date()
+        end_date = start_date + timedelta(days=4)  # Mon-Fri
+        
+        # Get all active technicians
+        techs = sb_select("technicians", filters=[("active", "eq", True)])
+        if not techs:
+            return {"availability": {}}
+        
+        tech_ids = [t['technician_id'] for t in techs]
+        
+        # Get all time off requests for these techs in date range - ONE query instead of 12!
+        sb = supabase_client()
+        time_off_result = sb.table('time_off_requests')\
+            .select('*')\
+            .in_('technician_id', tech_ids)\
+            .lte('start_date', str(end_date))\
+            .gte('end_date', str(start_date))\
+            .execute()
+        
+        # Build availability map
+        availability = {}
+        days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+        
+        for tech in techs:
+            tech_id = tech['technician_id']
+            availability[tech_id] = {}
+            max_hours = float(tech.get('max_daily_hours', 10))
+            
+            for i, day_name in enumerate(days):
+                check_date = start_date + timedelta(days=i)
+                
+                # Check if tech has time off on this day
+                time_off = None
+                for to in (time_off_result.data or []):
+                    if to['technician_id'] == tech_id:
+                        to_start = datetime.strptime(to['start_date'], "%Y-%m-%d").date()
+                        to_end = datetime.strptime(to['end_date'], "%Y-%m-%d").date()
+                        if to_start <= check_date <= to_end:
+                            time_off = to
+                            break
+                
+                if time_off:
+                    # hours_per_day stores HOURS AVAILABLE (not hours off)
+                    # 0 = full day off, 4 = 4 hours available, 8 = full day available
+                    hours_available = float(time_off.get('hours_per_day', 0))
+                    
+                    if hours_available <= 0:
+                        availability[tech_id][day_name] = {
+                            'available': False,
+                            'hours_available': 0,
+                            'reason': time_off.get('reason', 'Time off')
+                        }
+                    else:
+                        availability[tech_id][day_name] = {
+                            'available': True,
+                            'hours_available': hours_available,
+                            'reason': f"Partial day: {hours_available}h available"
+                        }
+                else:
+                    availability[tech_id][day_name] = {
+                        'available': True,
+                        'hours_available': max_hours,
+                        'reason': None
+                    }
+        
+        return {"availability": availability}
+        
+    except Exception as e:
+        print(f"Error in availability-batch: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, str(e))
+
+
 # ============================================
 # DATA MANAGER ENDPOINTS
 # ============================================
@@ -3137,262 +2624,6 @@ async def archive_job(request: ArchiveJobRequest):
     except Exception as e:
         print(f"Archive job error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-class ScheduleItem(BaseModel):
-    work_order: int
-    technician_id: int
-    date: str  # YYYY-MM-DD format
-    is_primary: int = 1
-
-class BulkScheduleRequest(BaseModel):
-    schedules: List[ScheduleItem]
-
-@app.post("/api/bulk-schedule")
-async def bulk_schedule_jobs(request: BulkScheduleRequest):
-    """
-    Bulk schedule jobs from Excel import
-    Moves jobs from job_pool to scheduled_jobs
-    """
-    try:
-        from supabase_client import supabase_client
-        sb = supabase_client()
-        
-        scheduled_count = 0
-        skipped_count = 0
-        errors = []
-        
-        for item in request.schedules:
-            try:
-                # Get job details from job_pool
-                job_result = sb.table('job_pool').select('*').eq('work_order', item.work_order).execute()
-                
-                if not job_result.data:
-                    errors.append(f"WO {item.work_order} not found in job_pool")
-                    skipped_count += 1
-                    continue
-                
-                job_data = job_result.data[0]
-                
-                # Check if already scheduled
-                existing = sb.table('scheduled_jobs').select('work_order').eq('work_order', item.work_order).execute()
-                if existing.data:
-                    errors.append(f"WO {item.work_order} already scheduled")
-                    skipped_count += 1
-                    continue
-                
-                # Prepare scheduled_job data
-                scheduled_job = {
-                    'work_order': item.work_order,
-                    'technician_id': item.technician_id,
-                    'date': item.date,
-                    'site_name': job_data.get('site_name'),
-                    'site_city': job_data.get('site_city'),
-                    'site_state': job_data.get('site_state'),
-                    'latitude': job_data.get('latitude'),
-                    'longitude': job_data.get('longitude'),
-                    'sow_1': job_data.get('sow_1'),
-                    'due_date': job_data.get('due_date'),
-                    'duration': float(job_data.get('duration', 2.0)),
-                    'site_id': job_data.get('site_id'),
-                    'is_night_job': job_data.get('night_test', False)
-                }
-                
-                # Insert into scheduled_jobs
-                sb.table('scheduled_jobs').insert(scheduled_job).execute()
-                
-                # Update job_pool status
-                sb.table('job_pool').update({
-                    'jp_status': 'Scheduled',
-                    'updated_at': datetime.now().isoformat()
-                }).eq('work_order', item.work_order).execute()
-                
-                scheduled_count += 1
-                
-            except Exception as e:
-                errors.append(f"WO {item.work_order}: {str(e)[:100]}")
-                skipped_count += 1
-        
-        return {
-            "success": True,
-            "scheduled_count": scheduled_count,
-            "skipped_count": skipped_count,
-            "total_processed": len(request.schedules),
-            "errors": errors[:500] if errors else None,  # Return first 50 errors
-            "message": f"Successfully scheduled {scheduled_count} of {len(request.schedules)} jobs"
-        }
-        
-    except Exception as e:
-        print(f"Bulk schedule error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/clear-scheduled-jobs")
-async def clear_scheduled_jobs():
-    """
-    Clear all scheduled jobs (useful for reimporting)
-    WARNING: This will delete ALL scheduled jobs!
-    """
-    try:
-        from supabase_client import supabase_client
-        sb = supabase_client()
-        
-        # First, get count
-        count_result = sb.table('scheduled_jobs').select('work_order', count='exact').execute()
-        count = count_result.count if hasattr(count_result, 'count') else 0
-        
-        if count == 0:
-            return {
-                "success": True,
-                "message": "No scheduled jobs to clear"
-            }
-        
-        # Clear scheduled_jobs table
-        sb.table('scheduled_jobs').delete().neq('work_order', 0).execute()  # Delete all
-        
-        # Reset all job_pool statuses
-        sb.table('job_pool').update({
-            'jp_status': 'Call',
-            'updated_at': datetime.now().isoformat()
-        }).eq('jp_status', 'Scheduled').execute()
-        
-        return {
-            "success": True,
-            "cleared_count": count,
-            "message": f"Cleared {count} scheduled jobs and reset job_pool statuses"
-        }
-        
-    except Exception as e:
-        print(f"Clear scheduled jobs error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    
-@app.post("/api/schedule/fillin")
-async def api_schedule_fillin(request: dict):
-    try:
-        tech_id = int(request['tech_id'])
-        week_start = request['week_start']
-        sow_filter = request.get('sow_filter')
-        target_weekly_hours = float(request.get('target_weekly_hours', 40))
-        
-        week_date = datetime.strptime(week_start, '%Y-%m-%d').date()
-        
-        result = schedule_week_fillin(
-            tech_id=tech_id,
-            week_start=week_date,
-            sow_filter=sow_filter,
-            target_weekly_hours=target_weekly_hours
-        )
-        
-        return result
-        
-    except Exception as e:
-        import traceback
-        return {
-            "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }   
-
-
-@app.post("/api/schedule/historical")
-async def api_schedule_historical(request: dict):
-    """
-    Generate schedule suggestions based on historical patterns.
-    Looks at job_history to find route patterns and suggests groupings.
-    """
-    try:
-        from scheduler_historical import match_jobs_to_history
-        
-        tech_id = int(request['tech_id'])
-        week_start = request['week_start']
-        
-        week_date = datetime.strptime(week_start, '%Y-%m-%d').date()
-        
-        result = match_jobs_to_history(
-            tech_id=tech_id,
-            week_start=week_date
-        )
-        
-        return result
-        
-    except Exception as e:
-        import traceback
-        return {
-            "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }
-
-
-@app.get("/api/schedule/historical-routes")
-async def api_get_historical_routes(
-    tech_id: int = Query(...),
-    week_start: str = Query(...)
-):
-    """
-    Get historical route patterns for display/comparison.
-    Shows what was done in previous years for the same time period.
-    """
-    try:
-        from scheduler_historical import get_historical_routes_for_display
-        
-        week_date = datetime.strptime(week_start, '%Y-%m-%d').date()
-        
-        result = get_historical_routes_for_display(
-            tech_id=tech_id,
-            week_start=week_date
-        )
-        
-        return result
-        
-    except Exception as e:
-        import traceback
-        return {
-            "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }
-
-
-@app.get("/api/schedule-import-status")
-async def get_schedule_import_status():
-    """
-    Get status of scheduled vs unscheduled jobs
-    Useful after import to verify
-    """
-    try:
-        from supabase_client import supabase_client
-        sb = supabase_client()
-        
-        # Get counts
-        total_jobs = sb.table('job_pool').select('work_order', count='exact').execute()
-        scheduled = sb.table('scheduled_jobs').select('work_order', count='exact').execute()
-        unscheduled = sb.table('job_pool').select('work_order', count='exact').eq('jp_status', 'Call').execute()
-        
-        # Get date range of scheduled jobs
-        date_range = sb.table('scheduled_jobs').select('date').order('date').execute()
-        
-        min_date = None
-        max_date = None
-        if date_range.data:
-            min_date = min(job['date'] for job in date_range.data if job['date'])
-            max_date = max(job['date'] for job in date_range.data if job['date'])
-        
-        return {
-            "total_jobs": total_jobs.count if hasattr(total_jobs, 'count') else 0,
-            "scheduled_count": scheduled.count if hasattr(scheduled, 'count') else 0,
-            "unscheduled_count": unscheduled.count if hasattr(unscheduled, 'count') else 0,
-            "schedule_date_range": {
-                "earliest": min_date,
-                "latest": max_date
-            },
-            "import_ready": True
-        }
-        
-    except Exception as e:
-        print(f"Import status error: {e}")
-        return {
-            "error": str(e),
-            "import_ready": False
-        }
 
 
 # ============================================================================

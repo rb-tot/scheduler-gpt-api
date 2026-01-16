@@ -368,14 +368,14 @@
                 <span> Data Manager</span>
                 <span style="font-size: 14px; opacity: 0.9;">Upload, Add, Remove Jobs</span>
             </div>
-            <span class="collapse-icon">â–¼</span>
+            <span class="collapse-icon">▼</span>
         </div>
         <div class="section-content">
             <!-- Upload Area -->
             <div class="upload-area" onclick="document.getElementById('file-input').click()" 
                  ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
                 <div>
-                    <div style="font-size: 48px;">ðŸ“</div>
+                    <div style="font-size: 48px;">📁</div>
                     <h3>Drop Excel/CSV file here</h3>
                     <p style="color: #6b7280; margin-top: 10px;">or click to browse</p>
                     <input type="file" id="file-input" class="file-input" accept=".csv,.xlsx,.xls" onchange="handleFileSelect(event)">
@@ -385,28 +385,28 @@
             <!-- Quick Actions -->
             <div class="quick-actions">
                 <div class="action-card">
-                    <div style="font-size: 32px;">âž•</div>
+                    <div style="font-size: 32px;">➕</div>
                     <h4>Add Single Job</h4>
                     <p style="font-size: 12px; color: #6b7280;">Quick entry for 1-2 jobs</p>
                     <button onclick="openAddJobModal()">Add Job</button>
                 </div>
 
                 <div class="action-card">
-                    <div style="font-size: 32px;">ðŸ”„</div>
+                    <div style="font-size: 32px;">🔄</div>
                     <h4>Process Staging</h4>
                     <p style="font-size: 12px; color: #6b7280;"><span id="staging-count">0</span> jobs ready</p>
                     <button onclick="processStaging()">Process Now</button>
                 </div>
 
                 <div class="action-card">
-                    <div style="font-size: 32px;">ðŸ§®</div>
+                    <div style="font-size: 32px;">🧮</div>
                     <h4>Recalculate</h4>
                     <p style="font-size: 12px; color: #6b7280;">Update eligibility</p>
                     <button onclick="recalculateEligibility()">Calculate</button>
                 </div>
                 
                 <div class="action-card" style="grid-column: span 2;">
-                    <div style="font-size: 32px;">ðŸ“‹</div>
+                    <div style="font-size: 32px;">📋</div>
                     <h4>View Job Pool</h4>
                     <p style="font-size: 12px; color: #6b7280;">View and edit all jobs</p>
                     <button onclick="openJobPoolModal()" style="padding: 12px 24px; font-size: 16px;">View Jobs</button>
@@ -433,10 +433,10 @@
     <div class="collapsible-section collapsed" id="status-section">
         <div class="section-header" onclick="toggleSection('status-section')">
             <div class="section-title">
-                <span>ðŸ“ˆ Database Status</span>
+                <span>📈 Database Status</span>
                 <span style="font-size: 14px; opacity: 0.9;">Current counts and health</span>
             </div>
-            <span class="collapse-icon">â–¼</span>
+            <span class="collapse-icon">▼</span>
         </div>
         <div class="section-content">
             <div class="status-grid">
@@ -472,10 +472,10 @@
     <div class="collapsible-section collapsed" id="activity-section">
         <div class="section-header" onclick="toggleSection('activity-section')">
             <div class="section-title">
-                <span>ðŸ“œ Recent Activity</span>
+                <span>📜 Recent Activity</span>
                 <span style="font-size: 14px; opacity: 0.9;">Import history and changes</span>
             </div>
-            <span class="collapse-icon">â–¼</span>
+            <span class="collapse-icon">▼</span>
         </div>
         <div class="section-content">
             <table class="job-table">
@@ -510,7 +510,7 @@
                     
                     <div>
                         <label style="display: block; margin-bottom: 5px;">Site ID *</label>
-                        <input type="number" id="new-site-id" style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 4px;" required onblur="loadSiteDetails()">
+                        <input type="number" id="new-site-id" style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 4px;" required>
                         <small style="color: #6b7280;">Enter Site ID to auto-fill location</small>
                     </div>
                     
@@ -1016,41 +1016,6 @@
             }
         }
 
-        // Load site details when Site ID is entered
-        async function loadSiteDetails() {
-            const siteId = document.getElementById('new-site-id').value;
-            if (!siteId) return;
-            
-            try {
-                const response = await fetch(`${API_BASE}/api/site/${siteId}`);
-                if (response.ok) {
-                    const site = await response.json();
-                    document.getElementById('new-site-name').value = site.site_name || '';
-                    document.getElementById('new-site-address').value = site.site_address || '';
-                    document.getElementById('new-city').value = site.site_city || '';
-                    document.getElementById('new-state').value = site.site_state || '';
-                    
-                    // Set GPS if available
-                    if (site.latitude && site.longitude) {
-                        document.getElementById('new-gps').value = `${site.latitude}, ${site.longitude}`;
-                    }
-                    
-                    // Set default duration if available
-                    if (site.est_hours) {
-                        document.getElementById('new-duration').value = site.est_hours;
-                    }
-                } else {
-                    // Just clear the fields if site not found
-                    document.getElementById('new-site-name').value = '';
-                    document.getElementById('new-site-address').value = '';
-                    document.getElementById('new-city').value = '';
-                    document.getElementById('new-state').value = '';
-                    document.getElementById('new-gps').value = '';
-                }
-            } catch (error) {
-                console.error('Error loading site:', error);
-            }
-        }
         async function archiveJob(workOrder, fromModal = false) {
             // Get reason - either from input field or prompt
             let reason;
