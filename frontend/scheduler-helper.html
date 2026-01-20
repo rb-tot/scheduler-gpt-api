@@ -229,7 +229,51 @@
             font-size: 12px;
             margin-left: 8px;
         }
-        
+        /* Monthly Windows panel */
+        .monthly-panel {
+            position: fixed;
+            right: 20px;
+            bottom: 80px;
+            width: 320px;
+            max-height: 50vh;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            z-index: 1000;
+            display: none;
+        }
+        .monthly-panel.open {
+            display: block;
+        }
+        .monthly-panel-header {
+            background: #d97706;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 8px 8px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .monthly-panel-content {
+            max-height: calc(50vh - 50px);
+            overflow-y: auto;
+            padding: 10px;
+        }
+        .monthly-job {
+            padding: 8px;
+            border: 1px solid #fcd34d;
+            border-radius: 4px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            background: #fffbeb;
+        }
+        .monthly-job:hover {
+            background: #fef3c7;
+        }
+        .monthly-job.overdue {
+            border: 2px solid #ef4444;
+            background: #fef2f2;
+        }
         /* Detail panel */
         .detail-panel {
             position: fixed;
@@ -421,7 +465,19 @@
         </div>
         <div class="urgent-panel-content" id="urgent-list"></div>
     </div>
-    
+    <!-- Monthly Windows toggle button (bottom right) -->
+    <div class="monthly-toggle" onclick="toggleMonthlyPanel()" style="position: fixed; right: 20px; bottom: 20px; background: #d97706; color: white; padding: 10px 15px; border-radius: 8px; cursor: pointer; z-index: 999; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+        Monthly Windows <span id="monthly-count" style="background: #fbbf24; padding: 2px 6px; border-radius: 10px; font-size: 11px; margin-left: 5px;">0</span>
+    </div>
+
+    <!-- Monthly Windows panel -->
+    <div class="monthly-panel" id="monthly-panel">
+        <div class="monthly-panel-header">
+            <span>Monthly Sites (Optimal Window)</span>
+            <span style="cursor: pointer;" onclick="toggleMonthlyPanel()">X</span>
+        </div>
+        <div class="monthly-panel-content" id="monthly-list"></div>
+    </div>
     <!-- Detail panel -->
     <div class="detail-panel" id="detail-panel">
         <h3>
@@ -614,6 +670,7 @@
                 renderCalendar();
                 renderMap();
                 renderUrgentJobs();
+                renderMonthlyWindows();
                 
             } catch (error) {
                 console.error('Error loading data:', error);
@@ -841,6 +898,7 @@
             // Refresh map with current data (called after filter changes)
             renderMap();
             renderUrgentJobs();
+            renderMonthlyWindows();
         }
         
         function renderMap() {
@@ -1031,27 +1089,28 @@
             }
             
             // Fallback to individual call if not in cache
-            try {
-                const response = await fetch(`/api/sites/visit-window/${siteId}`);
-                if (!response.ok) return null;
-                const data = await response.json();
-                if (!data.last_visit_date) return null;
+           // try {
+             //   const response = await fetch(`/api/sites/visit-window/${siteId}`);
+             //   if (!response.ok) return null;
+            //    const data = await response.json();
+             //   if (!data.last_visit_date) return null;
                 
-                const lastVisit = new Date(data.last_visit_date);
-                const earliest = new Date(lastVisit);
-                earliest.setDate(earliest.getDate() + 20);
-                const latest = new Date(lastVisit);
-                latest.setDate(latest.getDate() + 40);
+             //   const lastVisit = new Date(data.last_visit_date);
+              //  const earliest = new Date(lastVisit);
+              //  earliest.setDate(earliest.getDate() + 20);
+              //  const latest = new Date(lastVisit);
+               // latest.setDate(latest.getDate() + 40);
                 
-                return {
-                    lastVisit: data.last_visit_date,
-                    earliest: earliest.toISOString().split('T')[0],
-                    latest: latest.toISOString().split('T')[0]
-                };
-            } catch (e) {
-                console.error('Error fetching visit window:', e);
-                return null;
-            }
+             //   return {
+              //      lastVisit: data.last_visit_date,
+              //      earliest: earliest.toISOString().split('T')[0],
+              //      latest: latest.toISOString().split('T')[0]
+              //  };
+          //  } catch (e) {
+            //    console.error('Error fetching visit window:', e);
+            //    return null;
+          //  }
+          return null;
         }
         
         function formatVisitWindowDisplay(windowInfo) {
@@ -1495,6 +1554,108 @@
             panel.classList.toggle('open');
         }
         
+        function toggleMonthlyPanel() {
+            const panel = document.getElementById('monthly-panel');
+            panel.classList.toggle('open');
+            if (panel.classList.contains('open')) {
+                renderMonthlyWindows();
+            }
+        }
+
+        function renderMonthlyWindows() {
+            if (!currentWeek) {
+                document.getElementById('monthly-list').innerHTML = '<p style="color: #666; padding: 10px;">Select a week first</p>';
+                document.getElementById('monthly-count').textContent = '0';
+                return;
+            }
+            
+            const weekStart = new Date(currentWeek);
+            const weekEnd = new Date(currentWeek);
+            weekEnd.setDate(weekEnd.getDate() + 4); // Friday
+            
+            // Filter MOI jobs that have visit window data
+            const monthlyJobs = unscheduledJobs.filter(job => {
+                // Must be MOI job
+                if (!job.sow_1 || !job.sow_1.includes('MOI')) return false;
+                
+                // Must have visit window in cache
+                const window = visitWindowCache[job.site_id];
+                if (!window || !window.last_visit_date) return false;
+                
+                // Calculate optimal window (20-40 days after last visit)
+                const lastVisit = new Date(window.last_visit_date);
+                const windowStart = new Date(lastVisit);
+                windowStart.setDate(windowStart.getDate() + 20);
+                const windowEnd = new Date(lastVisit);
+                windowEnd.setDate(windowEnd.getDate() + 40);
+                
+                // Check if selected week overlaps with optimal window
+                return weekStart <= windowEnd && weekEnd >= windowStart;
+            }).map(job => {
+                const window = visitWindowCache[job.site_id];
+                const lastVisit = new Date(window.last_visit_date);
+                const windowStart = new Date(lastVisit);
+                windowStart.setDate(windowStart.getDate() + 20);
+                const windowEnd = new Date(lastVisit);
+                windowEnd.setDate(windowEnd.getDate() + 40);
+                
+                const today = new Date();
+                const daysSinceVisit = Math.floor((today - lastVisit) / (1000 * 60 * 60 * 24));
+                const isOverdue = daysSinceVisit > 40;
+                
+                return {
+                    ...job,
+                    lastVisitDate: window.last_visit_date,
+                    windowStart: windowStart.toISOString().split('T')[0],
+                    windowEnd: windowEnd.toISOString().split('T')[0],
+                    daysSinceVisit: daysSinceVisit,
+                    isOverdue: isOverdue
+                };
+            }).sort((a, b) => {
+                return new Date(a.windowEnd) - new Date(b.windowEnd);
+            });
+            
+            document.getElementById('monthly-count').textContent = monthlyJobs.length;
+            
+            let html = '';
+            monthlyJobs.forEach(job => {
+                const overdueClass = job.isOverdue ? 'overdue' : '';
+                const daysLabel = job.isOverdue 
+                    ? `<span style="color: #ef4444; font-weight: bold;">${job.daysSinceVisit} days (OVERDUE)</span>`
+                    : `${job.daysSinceVisit} days ago`;
+                
+                html += `
+                    <div class="monthly-job ${overdueClass}" onclick="selectMonthlyJob(${job.work_order})">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                            <div style="flex: 1;">
+                                <div style="font-size: 11px; color: #92400e;">Last Visit: ${job.lastVisitDate} (${daysLabel})</div>
+                                <div style="font-weight: bold; margin: 4px 0;">${job.site_name}</div>
+                                <div style="font-size: 11px; color: #666;">${job.region} | ${job.duration}h</div>
+                                <div style="font-size: 11px; color: #d97706; margin-top: 2px;">Window: ${job.windowStart} to ${job.windowEnd}</div>
+                            </div>
+                            <button onclick="event.stopPropagation(); addToSelectedJobs(${job.work_order})" 
+                                style="padding: 4px 8px; background: #f59e0b; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 10px; margin-left: 8px;"
+                                title="Add to Selected">+</button>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            document.getElementById('monthly-list').innerHTML = html || '<p style="color: #666; padding: 10px;">No MOI jobs in optimal window for this week</p>';
+        }
+
+        function selectMonthlyJob(workOrder) {
+            const job = unscheduledJobs.find(j => j.work_order === workOrder);
+            if (!job) return;
+            
+            selectedJob = job;
+            
+            if (job.latitude && job.longitude) {
+                map.setView([job.latitude, job.longitude], 10);
+            }
+            
+            showJobSuggestions(job);
+        }
         function closeDetailPanel() {
             const panel = document.getElementById('detail-panel');
             panel.classList.remove('open');

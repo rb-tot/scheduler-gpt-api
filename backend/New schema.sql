@@ -131,6 +131,7 @@ CREATE TABLE public.scheduled_jobs (
   site_id bigint,
   latitude numeric,
   longitude numeric,
+  site_address text,
   CONSTRAINT scheduled_jobs_pkey PRIMARY KEY (work_order),
   CONSTRAINT Scheduled_Jobs_work_order_fkey FOREIGN KEY (work_order) REFERENCES public.job_pool(work_order),
   CONSTRAINT Scheduled_Jobs_assigned_tech_id_fkey FOREIGN KEY (technician_id) REFERENCES public.technicians(technician_id),
@@ -157,6 +158,23 @@ CREATE TABLE public.site_distances (
   CONSTRAINT site_distances_from_fk FOREIGN KEY (from_site_id) REFERENCES public.sites(site_id),
   CONSTRAINT site_distances_to_fk FOREIGN KEY (to_site_id) REFERENCES public.sites(site_id)
 );
+CREATE TABLE public.site_visit_windows (
+  site_id bigint NOT NULL,
+  site_name text,
+  visit_cycle text,
+  last_visit_date date,
+  last_visit_source text,
+  last_work_order bigint,
+  earliest_schedule date,
+  optimal_target date,
+  latest_schedule date,
+  days_since_last_visit integer,
+  window_status text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT site_visit_windows_pkey PRIMARY KEY (site_id),
+  CONSTRAINT site_visit_windows_site_id_fkey FOREIGN KEY (site_id) REFERENCES public.sites(site_id)
+);
 CREATE TABLE public.sites (
   site_id bigint NOT NULL,
   site_name text,
@@ -167,6 +185,7 @@ CREATE TABLE public.sites (
   latitude double precision,
   longitude double precision,
   geom USER-DEFINED,
+  visit_cycle text CHECK (visit_cycle IS NULL OR (visit_cycle = ANY (ARRAY['monthly'::text, 'quarterly'::text, 'annual'::text, 'on-demand'::text]))),
   CONSTRAINT sites_pkey PRIMARY KEY (site_id)
 );
 CREATE TABLE public.spatial_ref_sys (
