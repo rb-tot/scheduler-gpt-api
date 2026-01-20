@@ -12,7 +12,13 @@ from scheduler_fillin import schedule_week_fillin
 import pandas as pd
 import io
 import scheduler_v5_geographic as sched_v5
-
+from route_template_builder import (
+    get_last_month_routes,
+    find_historically_paired_sites,
+    match_sites_to_current_jobs,
+    get_nearby_annuals,
+    build_pool_from_template
+)
 _db_semaphore = threading.Semaphore(10)
 
 # Environment setup
@@ -871,6 +877,168 @@ def get_scheduled_sites(year: int = None):
     site_ids = list(set(j['site_id'] for j in result.data if j.get('site_id')))
     
     return {"scheduled_site_ids": site_ids, "count": len(site_ids)}
+# ============================================================================
+# ROUTE TEMPLATE BUILDER ENDPOINTS
+# Add these to scheduler_api.py after the existing historical routes endpoints
+# ============================================================================
+
+# First, add this import at the top of scheduler_api.py:
+# from route_template_builder import (
+#     get_last_month_routes,
+#     find_historically_paired_sites,
+#     match_sites_to_current_jobs,
+#     get_nearby_annuals,
+#     build_pool_from_template
+# )
+
+# Then add these endpoints:
+
+@app.get("/api/route-templates/last-month")
+def api_get_last_month_routes(reference_date: str = None):
+    """
+    Get routes from last month grouped by tech + week.
+    These serve as templates for building job pools.
+    
+    Args:
+        reference_date: Optional. The date you're scheduling FOR (YYYY-MM-DD).
+                       Defaults to today. System looks ~4 weeks back.
+    
+    Returns:
+        List of route templates with site IDs, regions, and totals.
+    """
+    try:
+        from route_template_builder import get_last_month_routes
+        return get_last_month_routes(reference_date)
+    except Exception as e:
+        print(f"Error getting last month routes: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/route-templates/{route_id}/historical-pairings")
+def api_get_historical_pairings(
+    route_id: str,
+    years_back: int = 3,
+    min_overlap: int = 3,
+    week_flexibility: int = 1
+):
+    """
+    Find sites that were historically done with the given route's sites.
+    
+    Args:
+        route_id: The route template ID (e.g., "5_2024_W50")
+        years_back: How many years to search (default 3)
+        min_overlap: Minimum site overlap to consider a match (default 3)
+        week_flexibility: +/- weeks to search around target week (default 1)
+    """
+    try:
+        from route_template_builder import get_last_month_routes, find_historically_paired_sites
+        
+        # Get the route to find its site_ids and week_number
+        routes_data = get_last_month_routes()
+        route = None
+        for r in routes_data.get('routes', []):
+            if r['route_id'] == route_id:
+                route = r
+                break
+        
+        if not route:
+            raise HTTPException(404, f"Route {route_id} not found")
+        
+        return find_historically_paired_sites(
+            route['site_ids'],
+            route['week_number'],
+            years_back=years_back,
+            min_overlap=min_overlap,
+            week_flexibility=week_flexibility
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting historical pairings: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, str(e))
+
+
+class BuildPoolRequest(BaseModel):
+    route_id: str
+    due_within_days: int = 30
+    priority_within_days: int = 10
+    max_annual_distance: float = 50
+    years_back: int = 3
+    min_historical_overlap: int = 3
+
+
+@app.post("/api/route-templates/build-pool")
+def api_build_pool_from_template(request: BuildPoolRequest):
+    """
+    Build a complete job pool from a route template.
+    
+    Combines:
+    1. Current MOI jobs for template sites
+    2. Historically paired annuals (with current work orders)
+    3. Nearby annuals due within the specified window
+    
+    Returns categorized pool ready for scheduling.
+    """
+    try:
+        from route_template_builder import build_pool_from_template
+        
+        return build_pool_from_template(
+            route_id=request.route_id,
+            due_within_days=request.due_within_days,
+            priority_within_days=request.priority_within_days,
+            max_annual_distance=request.max_annual_distance,
+            years_back=request.years_back,
+            min_historical_overlap=request.min_historical_overlap
+        )
+    except Exception as e:
+        print(f"Error building pool from template: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/route-templates/nearby-annuals")
+def api_get_nearby_annuals(
+    site_ids: str,  # Comma-separated list
+    due_within_days: int = 30,
+    priority_within_days: int = 10,
+    max_distance: float = 50
+):
+    """
+    Get annual jobs near a set of sites.
+    Useful for manually adding annuals to a pool.
+    
+    Args:
+        site_ids: Comma-separated list of site IDs
+        due_within_days: Include jobs due within this window
+        priority_within_days: Flag jobs due within this as priority
+        max_distance: Max distance in miles from route center
+    """
+    try:
+        from route_template_builder import get_nearby_annuals
+        
+        site_id_list = [int(s.strip()) for s in site_ids.split(',') if s.strip()]
+        
+        if not site_id_list:
+            raise HTTPException(400, "No valid site IDs provided")
+        
+        return get_nearby_annuals(
+            site_id_list,
+            due_within_days=due_within_days,
+            priority_within_days=priority_within_days,
+            max_distance_miles=max_distance
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting nearby annuals: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, str(e))
 
 
 @app.post("/api/schedule/assign")
