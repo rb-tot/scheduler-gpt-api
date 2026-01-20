@@ -1,5 +1,6 @@
 # scheduler_api_unified.py - CLEAN UNIFIED API
 import os
+import threading
 from datetime import datetime, date, timedelta
 from typing import List, Optional, Dict, Any
 from fastapi import FastAPI, Header, HTTPException, UploadFile, File, Query
@@ -11,6 +12,8 @@ from scheduler_fillin import schedule_week_fillin
 import pandas as pd
 import io
 import scheduler_v5_geographic as sched_v5
+
+_db_semaphore = threading.Semaphore(10)
 
 # Environment setup
 from dotenv import load_dotenv
@@ -70,7 +73,8 @@ class SiteVisitWindowResponse(BaseModel):
     days_since_last_visit: Optional[int]
     window_status: Optional[str]
     scheduling_recommendation: Optional[str]
-
+class BatchSiteIdsRequest(BaseModel):
+    site_ids: List[int]
 class UpdateVisitCycleRequest(BaseModel):
     site_id: int
     visit_cycle: str  # 'monthly', 'quarterly', 'annual', 'on-demand', or null
@@ -81,33 +85,40 @@ def get_site_visit_window(site_id: int):
     Get the visit window for a specific site.
     Returns scheduling window information based on last visit.
     """
-    try:
-        sb = supabase_client()
-        
-        # Call the database function
-        result = sb.rpc('get_site_visit_window', {'p_site_id': site_id}).execute()
-        
-        if not result.data:
-            # Site might not have a visit_cycle set
-            # Return basic info from sites table
-            site = sb.table('sites').select('*').eq('site_id', site_id).execute()
-            if site.data:
-                return {
-                    "site_id": site_id,
-                    "site_name": site.data[0].get('site_name'),
-                    "visit_cycle": None,
-                    "window_status": "not_tracked",
-                    "scheduling_recommendation": "Site not set up for recurring visits"
-                }
-            raise HTTPException(404, f"Site {site_id} not found")
-        
-        return result.data[0]
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"Error getting site visit window: {e}")
-        raise HTTPException(500, str(e))
+    import time as time_module
+    max_retries = 3
+    retry_delay = 0.1
+    
+    with _db_semaphore:
+        for attempt in range(max_retries):
+            try:
+                sb = supabase_client()
+                result = sb.rpc('get_site_visit_window', {'p_site_id': site_id}).execute()
+                
+                if not result.data:
+                    site = sb.table('sites').select('*').eq('site_id', site_id).execute()
+                    if site.data:
+                        return {
+                            "site_id": site_id,
+                            "site_name": site.data[0].get('site_name'),
+                            "visit_cycle": None,
+                            "window_status": "not_tracked",
+                            "scheduling_recommendation": "Site not set up for recurring visits"
+                        }
+                    raise HTTPException(404, f"Site {site_id} not found")
+                
+                return result.data[0]
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                error_str = str(e)
+                if "10035" in error_str or "non-blocking socket" in error_str.lower():
+                    if attempt < max_retries - 1:
+                        time_module.sleep(retry_delay * (attempt + 1))
+                        continue
+                print(f"Error getting site visit window: {e}")
+                raise HTTPException(500, str(e))
 
 
 @app.get("/api/sites/visit-windows")
@@ -188,6 +199,51 @@ def get_sites_needing_visits(
         print(f"Error getting sites needing visits: {e}")
         raise HTTPException(500, str(e))
 
+@app.post("/api/sites/visit-windows-batch")
+def get_site_visit_windows_batch(request: BatchSiteIdsRequest):
+    """
+    Get visit windows for multiple sites in a single call.
+    Accepts up to 100 site IDs per request.
+    """
+    try:
+        if len(request.site_ids) > 100:
+            raise HTTPException(400, "Maximum 100 site IDs per request")
+        
+        if not request.site_ids:
+            return {"success": True, "windows": {}}
+        
+        sb = supabase_client()
+        results = {}
+        
+        for site_id in request.site_ids:
+            try:
+                result = sb.rpc('get_site_visit_window', {'p_site_id': site_id}).execute()
+                if result.data:
+                    results[site_id] = result.data[0]
+                else:
+                    results[site_id] = {
+                        "site_id": site_id,
+                        "visit_cycle": None,
+                        "window_status": "not_tracked"
+                    }
+            except Exception as e:
+                results[site_id] = {
+                    "site_id": site_id,
+                    "error": str(e),
+                    "window_status": "error"
+                }
+        
+        return {
+            "success": True,
+            "count": len(results),
+            "windows": results
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting batch site visit windows: {e}")
+        raise HTTPException(500, str(e))
 
 @app.post("/api/sites/visit-cycle")
 def update_site_visit_cycle(request: UpdateVisitCycleRequest):
@@ -489,11 +545,11 @@ def get_unscheduled_jobs(
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None)
 ):
-    """Get all unscheduled jobs with eligibility info"""
+    """Get all unscheduled jobs with eligibility info and visit windows"""
     
     from datetime import datetime, timedelta
-    # ADD THIS DEBUG BLOCK ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬Å“
-    print(f"\ DEBUG get_unscheduled_jobs:")
+    
+    print(f"\n DEBUG get_unscheduled_jobs:")
     print(f"  start_date received: {start_date}")
     print(f"  end_date received: {end_date}")
     
@@ -505,16 +561,16 @@ def get_unscheduled_jobs(
         filters.append(("due_date", "gte", start_date))
         print(f"   Added start filter: due_date >= {start_date}")
     if end_date:
-        # Use < next day instead of <= end day for reliable date filtering
         end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
         next_day = (end_date_obj + timedelta(days=1)).strftime("%Y-%m-%d")
         filters.append(("due_date", "lt", next_day))
         print(f"   Added end filter: due_date < {next_day}")
     print(f"  Final filters: {filters}")
-    # Get jobs with filters - THIS MUST EXECUTE
+    
+    # Get jobs with filters
     jobs = sb_select("job_pool", filters=filters)
-    print(f"   Jobs returned: {len(jobs)}")  # ADD THIS TOO
-    # Check if we got any jobs
+    print(f"   Jobs returned: {len(jobs)}")
+    
     if not jobs:
         return {"count": 0, "jobs": [], "summary": {}}
     
@@ -524,17 +580,62 @@ def get_unscheduled_jobs(
     if priority:
         jobs = [j for j in jobs if j.get("jp_priority") == priority]
     print(f"   Jobs after region/priority filter: {len(jobs)}")
+    
     # Apply limit
     jobs = jobs[:limit]
     print(f"   Jobs after limit ({limit}): {len(jobs)}")
-    # Add metadata
+    
+    # === BATCH FETCH VISIT WINDOWS (1 query instead of 500+) ===
+    site_ids = list(set(j.get('site_id') for j in jobs if j.get('site_id')))
+    window_lookup = {}
+    if site_ids:
+        try:
+            sb = supabase_client()
+            windows = sb.table('site_visit_windows').select('*').in_('site_id', site_ids).execute()
+            window_lookup = {w['site_id']: w for w in (windows.data or [])}
+            print(f"   Fetched {len(window_lookup)} visit windows in batch")
+        except Exception as e:
+            print(f"   Warning: Could not fetch visit windows: {e}")
+    
+    # === BATCH FETCH ELIGIBILITY (1 query instead of 500+) ===
+    work_orders = [j["work_order"] for j in jobs]
+    eligibility_lookup = {}
+    if work_orders:
+        try:
+            all_elig = sb_select("job_technician_eligibility", filters=[
+                ("work_order", "in", work_orders)
+            ])
+            for e in all_elig:
+                wo = e["work_order"]
+                if wo not in eligibility_lookup:
+                    eligibility_lookup[wo] = []
+                eligibility_lookup[wo].append(e["technician_id"])
+            print(f"   Fetched eligibility for {len(eligibility_lookup)} jobs in batch")
+        except Exception as e:
+            print(f"   Warning: Could not fetch eligibility: {e}")
+    
+    # Add metadata to each job
     for job in jobs:
-        # Get eligible techs count
-        elig = sb_select("job_technician_eligibility", filters=[
-            ("work_order", "eq", job["work_order"])
-        ])
-        job["eligible_tech_count"] = len(elig)
-        job["eligible_tech_ids"] = [e["technician_id"] for e in elig]
+        # Attach eligibility
+        wo = job["work_order"]
+        elig_techs = eligibility_lookup.get(wo, [])
+        job["eligible_tech_count"] = len(elig_techs)
+        job["eligible_tech_ids"] = elig_techs
+        
+        # Attach visit window
+        sid = job.get('site_id')
+        if sid and sid in window_lookup:
+            w = window_lookup[sid]
+            job['visit_window'] = {
+                'last_visit_date': w.get('last_visit_date'),
+                'earliest_schedule': w.get('earliest_schedule'),
+                'optimal_target': w.get('optimal_target'),
+                'latest_schedule': w.get('latest_schedule'),
+                'window_status': w.get('window_status'),
+                'visit_cycle': w.get('visit_cycle')
+            }
+        else:
+            job['visit_window'] = None
         
         # Calculate urgency
         due = pd.to_datetime(job.get("due_date"))
@@ -558,24 +659,21 @@ def get_unscheduled_jobs(
     }
     
     for job in jobs:
-        # Count by priority
         pri = job.get("jp_priority", "Unknown")
         summary["by_priority"][pri] = summary["by_priority"].get(pri, 0) + 1
         
-        # Count by region
         reg = job.get("site_state", "Unknown")
         summary["by_region"][reg] = summary["by_region"].get(reg, 0) + 1
         
-        # Count by urgency
         urg = job.get("urgency", "normal")
         summary["by_urgency"][urg] = summary["by_urgency"].get(urg, 0) + 1
+    
     print(f"   Returning {len(jobs)} jobs to frontend\n")
     return {
         "count": len(jobs),
         "jobs": jobs,
         "summary": summary
     }
-
 # ----------------------------------------------------------------------------
 # SCHEDULE OPERATIONS
 # ----------------------------------------------------------------------------

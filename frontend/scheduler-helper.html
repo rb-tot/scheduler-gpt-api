@@ -500,7 +500,8 @@
                 const response = await fetch(url);
                 const data = await response.json();
                 unscheduledJobs = data.jobs || [];
-                
+                // Pre-load visit windows for MOI jobs in batch
+                loadVisitWindowsForJobs(unscheduledJobs);
                 // Update count badge
                 const badge = document.getElementById('unscheduled-count');
                 badge.textContent = `${unscheduledJobs.length} jobs`;
@@ -593,7 +594,8 @@
                 scheduledJobs = schedData.scheduled_jobs || [];
                 unscheduledJobs = unschedData.jobs || [];
                 additionalTechJobs = addlData.additional_techs || [];
-                
+                // Pre-load visit windows for MOI jobs in batch
+                loadVisitWindowsForJobs(unscheduledJobs);
                 // Update count badge
                 const badge = document.getElementById('unscheduled-count');
                 if (badge) {
@@ -977,9 +979,93 @@
                 }
             });
         }
+        // Cache for visit windows - loaded in batch
+        let visitWindowCache = {};
+        let visitWindowCacheLoaded = false;
+
+        async function loadVisitWindowsForJobs(jobs) {
+            // Get unique site_ids from MOI jobs
+            const moiJobs = jobs.filter(j => j.sow_1 && j.sow_1.includes('MOI') && j.site_id);
+            const siteIds = [...new Set(moiJobs.map(j => j.site_id))];
+            
+            if (siteIds.length === 0) return;
+            
+            // Batch into groups of 100
+            for (let i = 0; i < siteIds.length; i += 100) {
+                const batch = siteIds.slice(i, i + 100);
+                try {
+                    const response = await fetch('/api/sites/visit-windows-batch', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ site_ids: batch })
+                    });
+                    if (response.ok) {
+                        const data = await response.json();
+                        // Merge results into cache
+                        Object.assign(visitWindowCache, data.windows || {});
+                    }
+                } catch (e) {
+                    console.error('Error loading visit windows batch:', e);
+                }
+            }
+            visitWindowCacheLoaded = true;
+        }
+
+        async function getVisitWindowInfo(siteId) {
+            // Try cache first
+            if (visitWindowCache[siteId]) {
+                const data = visitWindowCache[siteId];
+                if (!data.last_visit_date) return null;
+                
+                const lastVisit = new Date(data.last_visit_date);
+                const earliest = new Date(lastVisit);
+                earliest.setDate(earliest.getDate() + 20);
+                const latest = new Date(lastVisit);
+                latest.setDate(latest.getDate() + 40);
+                
+                return {
+                    lastVisit: data.last_visit_date,
+                    earliest: earliest.toISOString().split('T')[0],
+                    latest: latest.toISOString().split('T')[0]
+                };
+            }
+            
+            // Fallback to individual call if not in cache
+            try {
+                const response = await fetch(`/api/sites/visit-window/${siteId}`);
+                if (!response.ok) return null;
+                const data = await response.json();
+                if (!data.last_visit_date) return null;
+                
+                const lastVisit = new Date(data.last_visit_date);
+                const earliest = new Date(lastVisit);
+                earliest.setDate(earliest.getDate() + 20);
+                const latest = new Date(lastVisit);
+                latest.setDate(latest.getDate() + 40);
+                
+                return {
+                    lastVisit: data.last_visit_date,
+                    earliest: earliest.toISOString().split('T')[0],
+                    latest: latest.toISOString().split('T')[0]
+                };
+            } catch (e) {
+                console.error('Error fetching visit window:', e);
+                return null;
+            }
+        }
         
-        function createJobPopup(job) {
-            // Simple popup without visit window
+        function formatVisitWindowDisplay(windowInfo) {
+            if (!windowInfo) return '';
+            return `<div style="margin-top: 6px; padding: 6px; background: #fef3c7; border-radius: 4px; font-size: 11px;">
+                <b>Last Visit:</b> ${windowInfo.lastVisit}<br>
+                <b>Optimal Window:</b> ${windowInfo.earliest} to ${windowInfo.latest}
+            </div>`;
+        }
+
+                function createJobPopup(job) {
+            // Check if this is a MOI job that needs visit window
+            const hasMOI = job.sow_1 && job.sow_1.includes('MOI');
+            
             let html = `<div style="min-width: 200px;">
                 <b><a href="https://connect.cgrs.com/CGRSConnect/WorkOrder/Create?workOrderId=${job.work_order}" target="_blank" style="color: #2563eb; text-decoration: none;">${job.site_name}</a></b><br>
                 <span style="color: #666;">${job.region}</span><br>
@@ -988,6 +1074,7 @@
                 <b>Duration:</b> ${job.duration}h<br>
                 <b>SOW:</b> ${job.sow_1 || 'N/A'}<br>
                 <b>Priority:</b> ${job.jp_priority || 'Standard'}<br>
+                <span id="visit-window-${job.work_order}"></span>
             `;
             
             // Add action buttons
@@ -1003,6 +1090,16 @@
                     </button>
                 </div>
             </div>`;
+            
+            // If MOI job, fetch visit window async and update
+            if (hasMOI && job.site_id) {
+                getVisitWindowInfo(job.site_id).then(windowInfo => {
+                    const el = document.getElementById(`visit-window-${job.work_order}`);
+                    if (el && windowInfo) {
+                        el.innerHTML = formatVisitWindowDisplay(windowInfo);
+                    }
+                });
+            }
             
             return html;
         }
@@ -1120,7 +1217,7 @@
             showJobSuggestions(job);
         }
         
-        function showJobSuggestions(job) {
+                function showJobSuggestions(job) {
             const panel = document.getElementById('detail-panel');
             panel.classList.add('open');
             
@@ -1140,14 +1237,30 @@
             // Calculate best techs
             const suggestions = suggestBestTechs(job);
             
+            // Check if MOI job
+            const hasMOI = job.sow_1 && job.sow_1.includes('MOI');
+            
             let html = `
                 <div style="margin-bottom: 15px; padding: 10px; background: #f0f9ff; border-radius: 6px;">
                     <strong>Job Details:</strong> ${job.region} | ${job.duration}h | Due: ${job.due_date} | SOW: ${job.sow_1 || 'N/A'}
                     <button onclick="addToSelectedJobs(${job.work_order})" style="float: right; padding: 4px 10px; background: #f59e0b; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px;">
                         + Add to Selected
                     </button>
+                    <span id="urgent-visit-window-${job.work_order}"></span>
                 </div>
             `;
+            
+            // Fetch visit window for MOI jobs
+            if (hasMOI && job.site_id) {
+                getVisitWindowInfo(job.site_id).then(windowInfo => {
+                    const el = document.getElementById(`urgent-visit-window-${job.work_order}`);
+                    if (el && windowInfo) {
+                        el.innerHTML = `<div style="margin-top: 8px; padding: 6px; background: #fef3c7; border-radius: 4px; font-size: 11px; clear: both;">
+                            <b>Last Visit:</b> ${windowInfo.lastVisit} | <b>Optimal Window:</b> ${windowInfo.earliest} to ${windowInfo.latest}
+                        </div>`;
+                    }
+                });
+            }
             
             // Manual assign section - always show
             html += `
