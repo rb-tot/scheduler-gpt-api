@@ -882,17 +882,6 @@ def get_scheduled_sites(year: int = None):
 # Add these to scheduler_api.py after the existing historical routes endpoints
 # ============================================================================
 
-# First, add this import at the top of scheduler_api.py:
-# from route_template_builder import (
-#     get_last_month_routes,
-#     find_historically_paired_sites,
-#     match_sites_to_current_jobs,
-#     get_nearby_annuals,
-#     build_pool_from_template
-# )
-
-# Then add these endpoints:
-
 @app.get("/api/route-templates/last-month")
 def api_get_last_month_routes(reference_date: str = None):
     """
@@ -964,7 +953,8 @@ def api_get_historical_pairings(
 
 class BuildPoolRequest(BaseModel):
     route_id: str
-    due_within_days: int = 30
+    reference_date: Optional[str] = None  # YYYY-MM-DD - the date we're scheduling FOR
+    due_date_end: Optional[str] = None    # YYYY-MM-DD - only include jobs due on or before this date
     priority_within_days: int = 10
     max_annual_distance: float = 50
     years_back: int = 3
@@ -988,7 +978,8 @@ def api_build_pool_from_template(request: BuildPoolRequest):
         
         return build_pool_from_template(
             route_id=request.route_id,
-            due_within_days=request.due_within_days,
+            reference_date=request.reference_date,
+            due_date_end=request.due_date_end,
             priority_within_days=request.priority_within_days,
             max_annual_distance=request.max_annual_distance,
             years_back=request.years_back,

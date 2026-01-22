@@ -2648,14 +2648,6 @@
                     historicalDiv.innerHTML = '<p style="color: #f59e0b;">Could not build route - no jobs matched or all filtered out.</p>';
                     return;
                 }
-                
-                loadRouteTemplates()
-                hideTemplates()
-                buildPoolFromTemplate(routeId)
-                displayTemplatePool(data)
-                addPoolJobToSelected(workOrder, poolType)
-                addAllToSelected(poolType)
-                addAllPoolToSelected()
 
                 // Store and display
                 window.currentBuiltRoute = { route, tech };
@@ -3368,11 +3360,380 @@
         }
         
         // ============================================================================
-        // SELECTED JOBS FUNCTIONS
+        // ROUTE TEMPLATE BUILDER FUNCTIONS
         // ============================================================================
         // Global state for templates
         let routeTemplates = [];
         let currentTemplatePool = null;
+
+        async function loadRouteTemplates() {
+            const startDate = document.getElementById('route-start-date').value;
+            const templateDiv = document.getElementById('template-results');
+            
+            templateDiv.style.display = 'block';
+            templateDiv.innerHTML = '<p>Loading last month\'s routes...</p>';
+            
+            try {
+                const url = startDate 
+                    ? `/api/route-templates/last-month?reference_date=${startDate}`
+                    : '/api/route-templates/last-month';
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (!data.success || !data.routes || data.routes.length === 0) {
+                    templateDiv.innerHTML = `
+                        <p style="color: #666;">No routes found from last month.</p>
+                        <p style="font-size: 11px; color: #999;">Looked between ${data.lookback_range?.start || 'N/A'} and ${data.lookback_range?.end || 'N/A'}</p>
+                    `;
+                    return;
+                }
+                
+                routeTemplates = data.routes;
+                
+                let html = `
+                    <div style="font-size: 11px; color: #666; margin-bottom: 10px;">
+                        Found ${data.routes.length} routes from ${data.lookback_range?.start} to ${data.lookback_range?.end}
+                    </div>
+                    <div style="font-size: 11px; color: #888; margin-bottom: 10px;">
+                        Select a route to build a job pool
+                    </div>
+                `;
+                
+                data.routes.forEach((route, index) => {
+                    const regionBadges = route.regions.slice(0, 3).map(r => 
+                        `<span style="background: #e9d5ff; padding: 1px 4px; border-radius: 2px; font-size: 9px; margin-right: 2px;">${r}</span>`
+                    ).join('');
+                    const moreRegions = route.regions.length > 3 ? `<span style="font-size: 9px; color: #888;">+${route.regions.length - 3} more</span>` : '';
+                    
+                    html += `
+                        <div style="background: #f5f3ff; padding: 10px; margin-bottom: 8px; border-radius: 4px; border-left: 3px solid #8b5cf6;">
+                            <div style="display: flex; justify-content: space-between; align-items: start;">
+                                <div style="flex: 1;">
+                                    <strong>${route.technician_name}</strong><br>
+                                    <span style="font-size: 11px; color: #666;">
+                                        Week ${route.week_number} (${route.week_start} to ${route.week_end})<br>
+                                        ${route.total_jobs} jobs | ${route.total_hours.toFixed(1)}h
+                                    </span><br>
+                                    <span style="font-size: 10px;">${regionBadges}${moreRegions}</span>
+                                </div>
+                                <button onclick="buildPoolFromTemplate('${route.route_id}')" 
+                                        style="padding: 6px 12px; background: #22c55e; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; white-space: nowrap;">
+                                    Build Pool
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                html += `
+                    <button onclick="hideTemplates()" style="width: 100%; padding: 8px; background: #6b7280; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px;">
+                        Cancel
+                    </button>
+                `;
+                
+                templateDiv.innerHTML = html;
+                
+            } catch (error) {
+                console.error('Error loading route templates:', error);
+                templateDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            }
+        }
+
+        function hideTemplates() {
+            document.getElementById('template-results').style.display = 'none';
+        }
+
+        async function buildPoolFromTemplate(routeId) {
+            const templateDiv = document.getElementById('template-results');
+            
+            templateDiv.innerHTML = `
+                <div style="text-align: center; padding: 20px;">
+                    <p>Building pool from template...</p>
+                    <p style="font-size: 11px; color: #666;">Finding MOI jobs + historical pairings + nearby annuals</p>
+                </div>
+            `;
+            
+            try {
+                // Get the start date to pass as reference_date
+                const startDate = document.getElementById('route-start-date').value;
+                
+                const response = await fetch('/api/route-templates/build-pool', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        route_id: routeId,
+                        reference_date: startDate || null,
+                        due_within_days: 30,
+                        priority_within_days: 10,
+                        max_annual_distance: 50,
+                        years_back: 3,
+                        min_historical_overlap: 3
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (!data.success) {
+                    templateDiv.innerHTML = `<p style="color: red;">Error: ${data.error || 'Unknown error'}</p>`;
+                    return;
+                }
+                
+                currentTemplatePool = data;
+                displayTemplatePool(data);
+                
+            } catch (error) {
+                console.error('Error building pool:', error);
+                templateDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            }
+        }
+
+        function displayTemplatePool(data) {
+            const templateDiv = document.getElementById('template-results');
+            const route = data.route_template;
+            const pool = data.pool;
+            const summary = data.summary;
+            
+            let html = `
+                <div style="background: #dcfce7; padding: 10px; border-radius: 4px; margin-bottom: 10px;">
+                    <strong>Pool Built Successfully!</strong><br>
+                    <span style="font-size: 12px;">
+                        Based on ${route.technician_name}'s Week ${route.week_number} route
+                    </span>
+                </div>
+                
+                <div style="background: #f0fdf4; padding: 10px; border-radius: 4px; margin-bottom: 10px; font-size: 12px;">
+                    <strong>Summary:</strong><br>
+                    MOI Jobs: ${summary.total_moi_jobs} 
+                    ${summary.missing_moi_sites > 0 ? `<span style="color: #f59e0b;">(${summary.missing_moi_sites} sites missing WOs)</span>` : ''}<br>
+                    Historical Pairings: ${summary.total_historical_jobs}<br>
+                    Nearby Annuals: ${summary.total_nearby_annuals} 
+                    ${summary.priority_annuals > 0 ? `<span style="color: #ef4444;">(${summary.priority_annuals} priority)</span>` : ''}<br>
+                    <strong>Total Pool: ${summary.total_pool_size} jobs</strong>
+                </div>
+            `;
+            
+            // MOI Jobs Section
+            if (pool.moi_jobs && pool.moi_jobs.length > 0) {
+                html += `
+                    <div style="margin-bottom: 10px;">
+                        <div style="font-weight: bold; font-size: 12px; color: #166534; margin-bottom: 5px;">
+                            MOI Jobs (${pool.moi_jobs.length})
+                            <button onclick="addAllToSelected('moi')" style="float: right; padding: 2px 6px; background: #22c55e; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 10px;">Add All</button>
+                        </div>
+                        <div style="max-height: 150px; overflow-y: auto; background: #f0fdf4; padding: 5px; border-radius: 4px;">
+                `;
+                
+                pool.moi_jobs.forEach(job => {
+                    const inSelected = selectedJobs.some(j => j.work_order === job.work_order);
+                    html += `
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 3px 0; border-bottom: 1px solid #bbf7d0; font-size: 11px;">
+                            <div style="flex: 1; overflow: hidden;">
+                                <span>${(job.site_name || 'Unknown').substring(0, 25)}${(job.site_name || '').length > 25 ? '...' : ''}</span><br>
+                                <span style="color: #666; font-size: 10px;">${job.region || ''} | ${job.duration || 2}h | Due: ${job.due_date || 'N/A'}</span>
+                            </div>
+                            <button onclick="addPoolJobToSelected(${job.work_order}, 'moi')" 
+                                    style="padding: 2px 6px; background: ${inSelected ? '#d1d5db' : '#22c55e'}; color: ${inSelected ? '#666' : 'white'}; border: none; border-radius: 3px; cursor: pointer; font-size: 10px;"
+                                    ${inSelected ? 'disabled' : ''}>
+                                ${inSelected ? 'Added' : '+ Add'}
+                            </button>
+                        </div>
+                    `;
+                });
+                
+                html += '</div></div>';
+            }
+            
+            // Missing MOI Sites Warning
+            if (pool.moi_missing_sites && pool.moi_missing_sites.length > 0) {
+                html += `
+                    <div style="background: #fef3c7; padding: 8px; border-radius: 4px; margin-bottom: 10px; font-size: 11px;">
+                        <strong style="color: #92400e;">Missing Work Orders (${pool.moi_missing_sites.length})</strong><br>
+                        <span style="color: #78350f;">These sites were in last month's route but have no current WO:</span>
+                        <ul style="margin: 5px 0 0 15px; padding: 0;">
+                            ${pool.moi_missing_sites.slice(0, 5).map(s => `<li>${s.site_name || 'Site ' + s.site_id}</li>`).join('')}
+                            ${pool.moi_missing_sites.length > 5 ? `<li>...and ${pool.moi_missing_sites.length - 5} more</li>` : ''}
+                        </ul>
+                    </div>
+                `;
+            }
+            
+            // Historical Jobs Section
+            if (pool.historical_jobs && pool.historical_jobs.length > 0) {
+                html += `
+                    <div style="margin-bottom: 10px;">
+                        <div style="font-weight: bold; font-size: 12px; color: #6b21a8; margin-bottom: 5px;">
+                            Historically Paired (${pool.historical_jobs.length})
+                            <button onclick="addAllToSelected('historical')" style="float: right; padding: 2px 6px; background: #8b5cf6; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 10px;">Add All</button>
+                        </div>
+                        <div style="max-height: 150px; overflow-y: auto; background: #f5f3ff; padding: 5px; border-radius: 4px;">
+                `;
+                
+                pool.historical_jobs.forEach(job => {
+                    const inSelected = selectedJobs.some(j => j.work_order === job.work_order);
+                    const pairBadge = job.times_paired_historically ? `<span style="background: #c4b5fd; padding: 0 3px; border-radius: 2px; font-size: 9px;">${job.times_paired_historically}x</span>` : '';
+                    
+                    html += `
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 3px 0; border-bottom: 1px solid #e9d5ff; font-size: 11px;">
+                            <div style="flex: 1; overflow: hidden;">
+                                <span>${(job.site_name || 'Unknown').substring(0, 22)}${(job.site_name || '').length > 22 ? '...' : ''}</span> ${pairBadge}<br>
+                                <span style="color: #666; font-size: 10px;">${job.region || ''} | ${job.duration || 2}h | Due: ${job.due_date || 'N/A'}</span>
+                            </div>
+                            <button onclick="addPoolJobToSelected(${job.work_order}, 'historical')" 
+                                    style="padding: 2px 6px; background: ${inSelected ? '#d1d5db' : '#8b5cf6'}; color: ${inSelected ? '#666' : 'white'}; border: none; border-radius: 3px; cursor: pointer; font-size: 10px;"
+                                    ${inSelected ? 'disabled' : ''}>
+                                ${inSelected ? 'Added' : '+ Add'}
+                            </button>
+                        </div>
+                    `;
+                });
+                
+                html += '</div></div>';
+            }
+            
+            // Nearby Annuals Section
+            if (pool.nearby_annuals && pool.nearby_annuals.length > 0) {
+                html += `
+                    <div style="margin-bottom: 10px;">
+                        <div style="font-weight: bold; font-size: 12px; color: #b45309; margin-bottom: 5px;">
+                            Nearby Annuals (${pool.nearby_annuals.length})
+                            <button onclick="addAllToSelected('nearby')" style="float: right; padding: 2px 6px; background: #f59e0b; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 10px;">Add All</button>
+                        </div>
+                        <div style="max-height: 150px; overflow-y: auto; background: #fffbeb; padding: 5px; border-radius: 4px;">
+                `;
+                
+                pool.nearby_annuals.forEach(job => {
+                    const inSelected = selectedJobs.some(j => j.work_order === job.work_order);
+                    const priorityBadge = job.is_priority ? '<span style="background: #fca5a5; padding: 0 3px; border-radius: 2px; font-size: 9px;">PRIORITY</span>' : '';
+                    const distBadge = `<span style="background: #fde68a; padding: 0 3px; border-radius: 2px; font-size: 9px;">${job.distance_from_route_center}mi</span>`;
+                    
+                    html += `
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 3px 0; border-bottom: 1px solid #fde68a; font-size: 11px;">
+                            <div style="flex: 1; overflow: hidden;">
+                                <span>${(job.site_name || 'Unknown').substring(0, 20)}${(job.site_name || '').length > 20 ? '...' : ''}</span> ${priorityBadge} ${distBadge}<br>
+                                <span style="color: #666; font-size: 10px;">${job.region || ''} | ${job.duration || 2}h | Due: ${job.due_date || 'N/A'}</span>
+                            </div>
+                            <button onclick="addPoolJobToSelected(${job.work_order}, 'nearby')" 
+                                    style="padding: 2px 6px; background: ${inSelected ? '#d1d5db' : '#f59e0b'}; color: ${inSelected ? '#666' : 'white'}; border: none; border-radius: 3px; cursor: pointer; font-size: 10px;"
+                                    ${inSelected ? 'disabled' : ''}>
+                                ${inSelected ? 'Added' : '+ Add'}
+                            </button>
+                        </div>
+                    `;
+                });
+                
+                html += '</div></div>';
+            }
+            
+            // Action buttons
+            html += `
+                <div style="display: flex; gap: 8px; margin-top: 15px;">
+                    <button onclick="addAllPoolToSelected()" style="flex: 1; padding: 10px; background: #22c55e; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">
+                        Add All to Selected
+                    </button>
+                    <button onclick="loadRouteTemplates()" style="flex: 1; padding: 10px; background: #6b7280; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        Back to Templates
+                    </button>
+                </div>
+            `;
+            
+            templateDiv.innerHTML = html;
+        }
+
+        function addPoolJobToSelected(workOrder, poolType) {
+            if (!currentTemplatePool) return;
+            
+            const pool = currentTemplatePool.pool;
+            let job = null;
+            
+            // Find the job in the appropriate pool
+            if (poolType === 'moi') {
+                job = pool.moi_jobs.find(j => j.work_order === workOrder);
+            } else if (poolType === 'historical') {
+                job = pool.historical_jobs.find(j => j.work_order === workOrder);
+            } else if (poolType === 'nearby') {
+                job = pool.nearby_annuals.find(j => j.work_order === workOrder);
+            }
+            
+            if (!job) {
+                console.error('Job not found in pool:', workOrder);
+                return;
+            }
+            
+            // Check if already in selectedJobs
+            if (selectedJobs.some(j => j.work_order === workOrder)) {
+                return;
+            }
+            
+            // Add to selectedJobs
+            selectedJobs.push(job);
+            updateSelectedJobsDisplay();
+            
+            // Refresh the pool display to update button states
+            displayTemplatePool(currentTemplatePool);
+        }
+
+        function addAllToSelected(poolType) {
+            if (!currentTemplatePool) return;
+            
+            const pool = currentTemplatePool.pool;
+            let jobs = [];
+            
+            if (poolType === 'moi') {
+                jobs = pool.moi_jobs || [];
+            } else if (poolType === 'historical') {
+                jobs = pool.historical_jobs || [];
+            } else if (poolType === 'nearby') {
+                jobs = pool.nearby_annuals || [];
+            }
+            
+            // Add jobs that aren't already in selectedJobs
+            let added = 0;
+            jobs.forEach(job => {
+                if (!selectedJobs.some(j => j.work_order === job.work_order)) {
+                    selectedJobs.push(job);
+                    added++;
+                }
+            });
+            
+            if (added > 0) {
+                updateSelectedJobsDisplay();
+                displayTemplatePool(currentTemplatePool);
+            }
+        }
+
+        function addAllPoolToSelected() {
+            if (!currentTemplatePool) return;
+            
+            const pool = currentTemplatePool.pool;
+            const allJobs = [
+                ...(pool.moi_jobs || []), 
+                ...(pool.historical_jobs || []), 
+                ...(pool.nearby_annuals || [])
+            ];
+            
+            let added = 0;
+            allJobs.forEach(job => {
+                if (!selectedJobs.some(j => j.work_order === job.work_order)) {
+                    selectedJobs.push(job);
+                    added++;
+                }
+            });
+            
+            if (added > 0) {
+                updateSelectedJobsDisplay();
+                displayTemplatePool(currentTemplatePool);
+                
+                // Show success message
+                alert(`Added ${added} jobs to Selected Jobs. You can now use "Build from Selected Jobs" to route them.`);
+            } else {
+                alert('All jobs are already in Selected Jobs.');
+            }
+        }
+
+        // ============================================================================
+        // SELECTED JOBS FUNCTIONS
+        // ============================================================================
         let selectedJobs = [];
         const FRIDAY_RESTRICTED = ['King Soopers', 'Alta', 'Pacific Pride', 'City Market'];
         

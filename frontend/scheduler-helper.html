@@ -447,6 +447,8 @@
                 Build Route (Region-based)
             </button>
             
+            <div id="route-results" style="margin-top: 15px;"></div>
+            
             <div style="margin-top: 15px; padding-top: 15px; border-top: 2px solid #8b5cf6;">
                 <div style="font-weight: bold; color: #6b21a8; margin-bottom: 10px;">Build Pool from Last Month</div>
                 
@@ -2649,6 +2651,7 @@
                     return;
                 }
 
+                
                 // Store and display
                 window.currentBuiltRoute = { route, tech };
                 
@@ -3455,12 +3458,18 @@
             `;
             
             try {
+                // Get the start date to pass as reference_date
+                const startDate = document.getElementById('route-start-date').value;
+                // Get the filter end date to limit jobs
+                const filterEnd = document.getElementById('filter-end').value;
+                
                 const response = await fetch('/api/route-templates/build-pool', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         route_id: routeId,
-                        due_within_days: 30,
+                        reference_date: startDate || null,
+                        due_date_end: filterEnd || null,
                         priority_within_days: 10,
                         max_annual_distance: 50,
                         years_back: 3,
@@ -3525,7 +3534,7 @@
                     html += `
                         <div style="display: flex; justify-content: space-between; align-items: center; padding: 3px 0; border-bottom: 1px solid #bbf7d0; font-size: 11px;">
                             <div style="flex: 1; overflow: hidden;">
-                                <span>${(job.site_name || 'Unknown').substring(0, 25)}${(job.site_name || '').length > 25 ? '...' : ''}</span><br>
+                                <span style="color: #888; font-size: 9px;">WO ${job.work_order}</span> <span>${(job.site_name || 'Unknown').substring(0, 20)}${(job.site_name || '').length > 20 ? '...' : ''}</span><br>
                                 <span style="color: #666; font-size: 10px;">${job.region || ''} | ${job.duration || 2}h | Due: ${job.due_date || 'N/A'}</span>
                             </div>
                             <button onclick="addPoolJobToSelected(${job.work_order}, 'moi')" 
@@ -3572,7 +3581,7 @@
                     html += `
                         <div style="display: flex; justify-content: space-between; align-items: center; padding: 3px 0; border-bottom: 1px solid #e9d5ff; font-size: 11px;">
                             <div style="flex: 1; overflow: hidden;">
-                                <span>${(job.site_name || 'Unknown').substring(0, 22)}${(job.site_name || '').length > 22 ? '...' : ''}</span> ${pairBadge}<br>
+                                <span style="color: #888; font-size: 9px;">WO ${job.work_order}</span> <span>${(job.site_name || 'Unknown').substring(0, 18)}${(job.site_name || '').length > 18 ? '...' : ''}</span> ${pairBadge}<br>
                                 <span style="color: #666; font-size: 10px;">${job.region || ''} | ${job.duration || 2}h | Due: ${job.due_date || 'N/A'}</span>
                             </div>
                             <button onclick="addPoolJobToSelected(${job.work_order}, 'historical')" 
@@ -3606,7 +3615,7 @@
                     html += `
                         <div style="display: flex; justify-content: space-between; align-items: center; padding: 3px 0; border-bottom: 1px solid #fde68a; font-size: 11px;">
                             <div style="flex: 1; overflow: hidden;">
-                                <span>${(job.site_name || 'Unknown').substring(0, 20)}${(job.site_name || '').length > 20 ? '...' : ''}</span> ${priorityBadge} ${distBadge}<br>
+                                <span style="color: #888; font-size: 9px;">WO ${job.work_order}</span> <span>${(job.site_name || 'Unknown').substring(0, 16)}${(job.site_name || '').length > 16 ? '...' : ''}</span> ${priorityBadge} ${distBadge}<br>
                                 <span style="color: #666; font-size: 10px;">${job.region || ''} | ${job.duration || 2}h | Due: ${job.due_date || 'N/A'}</span>
                             </div>
                             <button onclick="addPoolJobToSelected(${job.work_order}, 'nearby')" 
@@ -3853,12 +3862,11 @@
                 const recurringJobs = selectedJobs.filter(j => j.is_recurring_site);
                 const regularJobs = selectedJobs.filter(j => !j.is_recurring_site);
                 
-                // Calculate distance from tech home for each regular job
-                regularJobs.forEach(job => {
-                    job.distanceFromHome = haversineDistance(
-                        tech.home_latitude, tech.home_longitude,
-                        job.latitude, job.longitude
-                    );
+                // Sort regular jobs by due date (earliest first)
+                regularJobs.sort((a, b) => {
+                    const dateA = a.due_date || '9999-12-31';
+                    const dateB = b.due_date || '9999-12-31';
+                    return dateA.localeCompare(dateB);
                 });
                 
                 // Sort regular jobs by distance (farthest first)
@@ -3910,28 +3918,46 @@
                         }
                     });
                     
-                    // Second: Add regular selected jobs by geography
-                    const availableJobs = regularJobs.filter(j => !usedWorkOrders.has(j.work_order));
+                    // Second: Add jobs that are due on or before today (MUST be scheduled)
+                    const mustScheduleToday = regularJobs.filter(j => 
+                        !usedWorkOrders.has(j.work_order) && 
+                        j.due_date && 
+                        j.due_date <= dateStr
+                    );
                     
-                    // Target jobs by day (far early, close late)
-                    let targetJobs;
-                    if (dayIndex <= 1) {
-                        targetJobs = availableJobs.filter(j => j.distanceFromHome > 90);
-                        if (targetJobs.length === 0) targetJobs = availableJobs.slice(0, 3);
-                    } else if (dayIndex <= 2) {
-                        targetJobs = availableJobs.filter(j => j.distanceFromHome > 50 && j.distanceFromHome <= 150);
-                        if (targetJobs.length === 0) targetJobs = availableJobs.slice(0, 3);
-                    } else {
-                        targetJobs = availableJobs.filter(j => j.distanceFromHome <= 90);
-                        if (targetJobs.length === 0) targetJobs = availableJobs;
+                    for (const job of mustScheduleToday) {
+                        if (usedWorkOrders.has(job.work_order)) continue;
+                        if (isFriday && FRIDAY_RESTRICTED.some(r => job.site_name.includes(r))) {
+                            warnings.push(`${job.site_name}: Due ${job.due_date} but Friday-restricted`);
+                            continue;
+                        }
+                        
+                        const distance = haversineDistance(currentLocation.lat, currentLocation.lon, job.latitude, job.longitude);
+                        const driveTime = distance / 45;
+                        const jobDuration = job.duration || 2;
+                        
+                        // For jobs that would miss due date, allow longer days (up to 12h)
+                        if (dayWorkHours + dayDriveHours + driveTime + jobDuration <= 12 || dayJobs.length === 0) {
+                            dayJobs.push({ ...job, distance, driveTime, isSelected: true, isRecurring: false });
+                            usedWorkOrders.add(job.work_order);
+                            dayWorkHours += jobDuration;
+                            dayDriveHours += driveTime;
+                            currentLocation = { lat: job.latitude, lon: job.longitude };
+                            
+                            if (job.due_date < dateStr) {
+                                warnings.push(`${job.site_name}: Due ${job.due_date}, scheduled ${dateStr}`);
+                            }
+                        }
                     }
                     
-                    // Nearest-neighbor from current location
-                    while (targetJobs.length > 0) {
+                    // Third: Fill remaining time with other jobs using nearest-neighbor
+                    const availableJobs = regularJobs.filter(j => !usedWorkOrders.has(j.work_order));
+                    
+                    while (availableJobs.length > 0) {
                         let bestJob = null;
                         let bestDistance = Infinity;
                         
-                        for (const job of targetJobs) {
+                        for (const job of availableJobs) {
                             if (usedWorkOrders.has(job.work_order)) continue;
                             if (isFriday && FRIDAY_RESTRICTED.some(r => job.site_name.includes(r))) continue;
                             
@@ -3957,7 +3983,7 @@
                         dayWorkHours += jobDuration;
                         dayDriveHours += driveTime;
                         currentLocation = { lat: bestJob.latitude, lon: bestJob.longitude };
-                        targetJobs = targetJobs.filter(j => j.work_order !== bestJob.work_order);
+                        availableJobs.splice(availableJobs.indexOf(bestJob), 1);
                     }
                     
                     // Hotel check

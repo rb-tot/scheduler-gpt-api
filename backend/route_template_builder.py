@@ -12,7 +12,7 @@ from datetime import date, datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 from collections import defaultdict
 from dataclasses import dataclass
-
+from math import cos, radians, sin, asin, sqrt
 from supabase_client import supabase_client
 
 
@@ -323,11 +323,15 @@ def find_historically_paired_sites(
     }
 
 
-def match_sites_to_current_jobs(site_ids: List[int]) -> Dict:
+def match_sites_to_current_jobs(site_ids: List[int], due_date_end: str = None) -> Dict:
     """
     Find current work orders in job_pool for the given site IDs.
     
     Returns jobs that are available for scheduling (not already scheduled).
+    
+    Args:
+        site_ids: List of site IDs to find jobs for
+        due_date_end: Optional. Only include jobs due on or before this date (YYYY-MM-DD)
     """
     sb = supabase_client()
     
@@ -336,11 +340,16 @@ def match_sites_to_current_jobs(site_ids: List[int]) -> Dict:
     
     # Query job_pool for these sites
     # Only get jobs that are ready to schedule (Call or Waiting to Schedule)
-    result = sb.table('job_pool')\
+    query = sb.table('job_pool')\
         .select('*')\
         .in_('site_id', site_ids)\
-        .in_('jp_status', ['Call', 'Waiting to Schedule'])\
-        .execute()
+        .in_('jp_status', ['Call', 'Waiting to Schedule'])
+    
+    # Apply due date filter if provided
+    if due_date_end:
+        query = query.lte('due_date', due_date_end)
+    
+    result = query.execute()
     
     found_jobs = result.data or []
     
@@ -368,16 +377,22 @@ def match_sites_to_current_jobs(site_ids: List[int]) -> Dict:
 
 def get_nearby_annuals(
     site_ids: List[int],
-    due_within_days: int = 30,
+    due_date_end: str = None,
     priority_within_days: int = 10,
     max_distance_miles: float = 50
 ) -> Dict:
     """
     Find annual jobs that are:
-    1. Due within the specified window
+    1. Due on or before due_date_end
     2. Geographically near the given sites
     
     Uses PostGIS for efficient proximity search.
+    
+    Args:
+        site_ids: List of site IDs to calculate center point from
+        due_date_end: Only include jobs due on or before this date (YYYY-MM-DD)
+        priority_within_days: Flag jobs due within this many days as priority
+        max_distance_miles: Max distance from route center
     """
     sb = supabase_client()
     
@@ -405,8 +420,13 @@ def get_nearby_annuals(
     
     # Calculate date range
     today = date.today()
-    due_cutoff = today + timedelta(days=due_within_days)
     priority_cutoff = today + timedelta(days=priority_within_days)
+    
+    # Use provided due_date_end or default to 30 days from today
+    if due_date_end:
+        due_cutoff = due_date_end
+    else:
+        due_cutoff = str(today + timedelta(days=30))
     
     # Query for annual jobs near the centroid
     # Using a bounding box first, then calculate actual distance
@@ -417,7 +437,7 @@ def get_nearby_annuals(
     result = sb.table('job_pool')\
         .select('*')\
         .in_('jp_status', ['Call', 'Waiting to Schedule'])\
-        .lte('due_date', str(due_cutoff))\
+        .lte('due_date', due_cutoff)\
         .gte('latitude', center_lat - lat_range)\
         .lte('latitude', center_lat + lat_range)\
         .gte('longitude', center_lon - lon_range)\
@@ -433,7 +453,6 @@ def get_nearby_annuals(
     
     # Filter out MOI jobs (we only want annuals) and jobs already in our site list
     # Also calculate actual distance and priority flag
-    from math import radians, cos, sin, asin, sqrt
     
     def haversine(lat1, lon1, lat2, lon2):
         """Calculate distance in miles between two points"""
@@ -490,7 +509,8 @@ def get_nearby_annuals(
 
 def build_pool_from_template(
     route_id: str,
-    due_within_days: int = 30,
+    reference_date: str = None,
+    due_date_end: str = None,
     priority_within_days: int = 10,
     max_annual_distance: float = 50,
     years_back: int = 3,
@@ -506,7 +526,8 @@ def build_pool_from_template(
     
     Args:
         route_id: The route template ID (e.g., "tech_5_2024_W50")
-        due_within_days: Include annuals due within this window
+        reference_date: The date we're scheduling FOR (YYYY-MM-DD) - needed to find the right routes
+        due_date_end: Only include jobs due on or before this date (YYYY-MM-DD)
         priority_within_days: Flag annuals due within this many days as priority
         max_annual_distance: Max distance in miles for nearby annuals
         years_back: How many years to search for historical pairings
@@ -515,8 +536,8 @@ def build_pool_from_template(
     Returns:
         Dict with categorized job pool
     """
-    # First, get the route template details
-    routes_data = get_last_month_routes()
+    # First, get the route template details (pass reference_date to look at the same date range)
+    routes_data = get_last_month_routes(reference_date)
     
     if not routes_data.get('success') or not routes_data.get('routes'):
         return {"success": False, "error": "Could not load route templates"}
@@ -536,9 +557,11 @@ def build_pool_from_template(
     
     print(f"Building pool from route {route_id}")
     print(f"Template has {len(template_site_ids)} sites: {route['site_names'][:5]}...")
+    if due_date_end:
+        print(f"Filtering jobs due on or before: {due_date_end}")
     
     # Step 1: Get current MOI jobs for template sites
-    moi_jobs_result = match_sites_to_current_jobs(template_site_ids)
+    moi_jobs_result = match_sites_to_current_jobs(template_site_ids, due_date_end=due_date_end)
     moi_jobs = moi_jobs_result.get('jobs', [])
     missing_moi_sites = moi_jobs_result.get('missing_sites', [])
     
@@ -557,7 +580,7 @@ def build_pool_from_template(
     
     # Get current jobs for historically paired sites
     historical_site_ids = [s['site_id'] for s in historically_paired if s.get('site_id')]
-    historical_jobs_result = match_sites_to_current_jobs(historical_site_ids)
+    historical_jobs_result = match_sites_to_current_jobs(historical_site_ids, due_date_end=due_date_end)
     historical_jobs = historical_jobs_result.get('jobs', [])
     
     # Add pairing frequency to jobs
@@ -571,7 +594,7 @@ def build_pool_from_template(
     all_pool_site_ids = template_site_ids + historical_site_ids
     nearby_result = get_nearby_annuals(
         all_pool_site_ids,
-        due_within_days=due_within_days,
+        due_date_end=due_date_end,
         priority_within_days=priority_within_days,
         max_distance_miles=max_annual_distance
     )
@@ -602,7 +625,7 @@ def build_pool_from_template(
             "priority_annuals": len([j for j in nearby_annuals if j.get('is_priority')])
         },
         "search_params": {
-            "due_within_days": due_within_days,
+            "due_date_end": due_date_end,
             "priority_within_days": priority_within_days,
             "max_annual_distance": max_annual_distance,
             "years_back": years_back,
@@ -611,5 +634,4 @@ def build_pool_from_template(
     }
 
 
-# Import math functions at module level
-from math import cos
+
