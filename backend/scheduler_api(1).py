@@ -12,7 +12,13 @@ from scheduler_fillin import schedule_week_fillin
 import pandas as pd
 import io
 import scheduler_v5_geographic as sched_v5
-
+from route_template_builder import (
+    get_last_month_routes,
+    find_historically_paired_sites,
+    match_sites_to_current_jobs,
+    get_nearby_annuals,
+    build_pool_from_template
+)
 _db_semaphore = threading.Semaphore(10)
 
 # Environment setup
@@ -871,6 +877,159 @@ def get_scheduled_sites(year: int = None):
     site_ids = list(set(j['site_id'] for j in result.data if j.get('site_id')))
     
     return {"scheduled_site_ids": site_ids, "count": len(site_ids)}
+# ============================================================================
+# ROUTE TEMPLATE BUILDER ENDPOINTS
+# Add these to scheduler_api.py after the existing historical routes endpoints
+# ============================================================================
+
+@app.get("/api/route-templates/last-month")
+def api_get_last_month_routes(reference_date: str = None):
+    """
+    Get routes from last month grouped by tech + week.
+    These serve as templates for building job pools.
+    
+    Args:
+        reference_date: Optional. The date you're scheduling FOR (YYYY-MM-DD).
+                       Defaults to today. System looks ~4 weeks back.
+    
+    Returns:
+        List of route templates with site IDs, regions, and totals.
+    """
+    try:
+        from route_template_builder import get_last_month_routes
+        return get_last_month_routes(reference_date)
+    except Exception as e:
+        print(f"Error getting last month routes: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/route-templates/{route_id}/historical-pairings")
+def api_get_historical_pairings(
+    route_id: str,
+    years_back: int = 3,
+    min_overlap: int = 3,
+    week_flexibility: int = 1
+):
+    """
+    Find sites that were historically done with the given route's sites.
+    
+    Args:
+        route_id: The route template ID (e.g., "5_2024_W50")
+        years_back: How many years to search (default 3)
+        min_overlap: Minimum site overlap to consider a match (default 3)
+        week_flexibility: +/- weeks to search around target week (default 1)
+    """
+    try:
+        from route_template_builder import get_last_month_routes, find_historically_paired_sites
+        
+        # Get the route to find its site_ids and week_number
+        routes_data = get_last_month_routes()
+        route = None
+        for r in routes_data.get('routes', []):
+            if r['route_id'] == route_id:
+                route = r
+                break
+        
+        if not route:
+            raise HTTPException(404, f"Route {route_id} not found")
+        
+        return find_historically_paired_sites(
+            route['site_ids'],
+            route['week_number'],
+            years_back=years_back,
+            min_overlap=min_overlap,
+            week_flexibility=week_flexibility
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting historical pairings: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, str(e))
+
+
+class BuildPoolRequest(BaseModel):
+    route_id: str
+    reference_date: Optional[str] = None  # YYYY-MM-DD - the date we're scheduling FOR
+    due_date_end: Optional[str] = None    # YYYY-MM-DD - only include jobs due on or before this date
+    priority_within_days: int = 10
+    max_annual_distance: float = 50
+    years_back: int = 3
+    min_historical_overlap: int = 3
+
+
+@app.post("/api/route-templates/build-pool")
+def api_build_pool_from_template(request: BuildPoolRequest):
+    """
+    Build a complete job pool from a route template.
+    
+    Combines:
+    1. Current MOI jobs for template sites
+    2. Historically paired annuals (with current work orders)
+    3. Nearby annuals due within the specified window
+    
+    Returns categorized pool ready for scheduling.
+    """
+    try:
+        from route_template_builder import build_pool_from_template
+        
+        return build_pool_from_template(
+            route_id=request.route_id,
+            reference_date=request.reference_date,
+            due_date_end=request.due_date_end,
+            priority_within_days=request.priority_within_days,
+            max_annual_distance=request.max_annual_distance,
+            years_back=request.years_back,
+            min_historical_overlap=request.min_historical_overlap
+        )
+    except Exception as e:
+        print(f"Error building pool from template: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/route-templates/nearby-annuals")
+def api_get_nearby_annuals(
+    site_ids: str,  # Comma-separated list
+    due_within_days: int = 30,
+    priority_within_days: int = 10,
+    max_distance: float = 50
+):
+    """
+    Get annual jobs near a set of sites.
+    Useful for manually adding annuals to a pool.
+    
+    Args:
+        site_ids: Comma-separated list of site IDs
+        due_within_days: Include jobs due within this window
+        priority_within_days: Flag jobs due within this as priority
+        max_distance: Max distance in miles from route center
+    """
+    try:
+        from route_template_builder import get_nearby_annuals
+        
+        site_id_list = [int(s.strip()) for s in site_ids.split(',') if s.strip()]
+        
+        if not site_id_list:
+            raise HTTPException(400, "No valid site IDs provided")
+        
+        return get_nearby_annuals(
+            site_id_list,
+            due_within_days=due_within_days,
+            priority_within_days=priority_within_days,
+            max_distance_miles=max_distance
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting nearby annuals: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, str(e))
 
 
 @app.post("/api/schedule/assign")
@@ -884,7 +1043,7 @@ def assign_single_job(req: AssignJobRequest):
     
     job = job[0]
     
-    # 2. Get technician details  ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Ãƒâ€šÃ‚Â ADD THIS SECTION
+    # 2. Get technician details  ÃƒÂ¢Ã¢â‚¬Â Ã‚Â ADD THIS SECTION
     tech_result = sb_select("technicians", filters=[("technician_id", "eq", req.technician_id)])
     if not tech_result:
         return {"success": False, "errors": [f"Technician {req.technician_id} not found"]}
@@ -1429,7 +1588,7 @@ def monthly_analysis(year: int, month: int):
             work_hours = stats['work_hours']
             
             # Estimate drive time for this region
-            # Formula: (jobs - 1) ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â avg_distance_between_jobs + 2 ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â home_to_region
+            # Formula: (jobs - 1) ÃƒÆ’Ã¢â‚¬â€ avg_distance_between_jobs + 2 ÃƒÆ’Ã¢â‚¬â€ home_to_region
             if job_count > 0:
                 # Intra-region driving (between jobs)
                 intra_region_miles = (job_count - 1) * AVG_INTRA_REGION_DISTANCE if job_count > 1 else 0
@@ -1671,7 +1830,7 @@ async def upload_jobs(file: UploadFile = File(...)):
             except UnicodeDecodeError:
                 pass
             
-            # Method 2: Try Latin-1 (handles Spanish characters like ÃƒÆ’Ã‚Â±)
+            # Method 2: Try Latin-1 (handles Spanish characters like ÃƒÂ±)
             if df is None:
                 try:
                     df = pd.read_csv(io.BytesIO(contents), encoding='latin-1')
@@ -2377,10 +2536,6 @@ def get_technician_time_off(
         "time_off": expanded
     }
 
-class DeleteTimeOffRequest(BaseModel):
-    technician_id: int
-    dates: Optional[List[str]] = None  # If None, delete all; if provided, delete specific dates
-
 @app.post("/api/timeoff/save")
 def save_time_off(req: SaveTimeOffRequest):
     """
@@ -2422,40 +2577,6 @@ def save_time_off(req: SaveTimeOffRequest):
     
     except Exception as e:
         raise HTTPException(500, f"Failed to save time off: {str(e)}")
-
-@app.post("/api/timeoff/delete")
-def delete_time_off(req: DeleteTimeOffRequest):
-    """
-    Delete time off entries for a technician.
-    If dates provided, delete only those dates. Otherwise delete all.
-    """
-    try:
-        sb = supabase_client()
-        
-        if req.dates:
-            # Delete specific dates
-            for date_str in req.dates:
-                sb.table("time_off_requests").delete()\
-                    .eq("technician_id", req.technician_id)\
-                    .eq("start_date", date_str)\
-                    .eq("end_date", date_str)\
-                    .execute()
-            return {
-                "success": True,
-                "message": f"Deleted {len(req.dates)} time off entries"
-            }
-        else:
-            # Delete all for this technician
-            sb.table("time_off_requests").delete()\
-                .eq("technician_id", req.technician_id)\
-                .execute()
-            return {
-                "success": True,
-                "message": "Deleted all time off entries"
-            }
-    
-    except Exception as e:
-        raise HTTPException(500, f"Failed to delete time off: {str(e)}")
 
 # ============================================================================
 # HELPER FUNCTION FOR SCHEDULING
