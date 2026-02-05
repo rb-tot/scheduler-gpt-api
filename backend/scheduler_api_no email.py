@@ -511,6 +511,10 @@ class TimeOffEntry(BaseModel):
 class SaveTimeOffRequest(BaseModel):
     time_off: List[TimeOffEntry]
 
+class DeleteTimeOffRequest(BaseModel):
+    technician_id: int
+    dates: Optional[List[str]] = None  # If None, delete all
+
 @app.get("/current-schedule", response_class=HTMLResponse)
 def serve_current_schedule():
     """Serve the current schedule view page"""
@@ -2577,6 +2581,40 @@ def save_time_off(req: SaveTimeOffRequest):
     
     except Exception as e:
         raise HTTPException(500, f"Failed to save time off: {str(e)}")
+
+@app.delete("/api/technicians/time-off")
+def delete_time_off(req: DeleteTimeOffRequest):
+    """
+    Delete time off entries for a technician.
+    If dates provided, delete only those dates. Otherwise delete all.
+    """
+    try:
+        sb = supabase_client()
+        
+        if req.dates:
+            # Delete specific dates
+            for date_str in req.dates:
+                sb.table("time_off_requests").delete()\
+                    .eq("technician_id", req.technician_id)\
+                    .eq("start_date", date_str)\
+                    .eq("end_date", date_str)\
+                    .execute()
+            return {
+                "success": True,
+                "message": f"Deleted {len(req.dates)} time off entries"
+            }
+        else:
+            # Delete all for this technician
+            sb.table("time_off_requests").delete()\
+                .eq("technician_id", req.technician_id)\
+                .execute()
+            return {
+                "success": True,
+                "message": "Deleted all time off entries"
+            }
+    
+    except Exception as e:
+        raise HTTPException(500, f"Failed to delete time off: {str(e)}")   
 
 # ============================================================================
 # HELPER FUNCTION FOR SCHEDULING
