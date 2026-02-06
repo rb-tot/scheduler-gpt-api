@@ -1,9 +1,12 @@
 # scheduler_api_unified.py - CLEAN UNIFIED API
 import os
+import logging
 import threading
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+
+logger = logging.getLogger(__name__)
 from datetime import datetime, date, timedelta
 from typing import List, Optional, Dict, Any
 from fastapi import FastAPI, Header, HTTPException, UploadFile, File, Query
@@ -41,7 +44,7 @@ try:
     from db_queries import job_pool_df as _jp, technicians_df as _techs
     
 except ImportError:
-    print("Missing dependencies - install: supabase, pandas")
+    logger.critical("Missing dependencies - install: supabase, pandas")
 
 # ============================================================================
 # APP SETUP
@@ -130,7 +133,7 @@ def get_site_visit_window(site_id: int):
                     if attempt < max_retries - 1:
                         time_module.sleep(retry_delay * (attempt + 1))
                         continue
-                print(f"Error getting site visit window: {e}")
+                logger.error(f"Error getting site visit window: {e}")
                 raise HTTPException(500, str(e))
 
 
@@ -181,7 +184,7 @@ def get_all_site_visit_windows(
         }
         
     except Exception as e:
-        print(f"Error getting site visit windows: {e}")
+        logger.error(f"Error getting site visit windows: {e}")
         raise HTTPException(500, str(e))
 
 
@@ -209,7 +212,7 @@ def get_sites_needing_visits(
         }
         
     except Exception as e:
-        print(f"Error getting sites needing visits: {e}")
+        logger.error(f"Error getting sites needing visits: {e}")
         raise HTTPException(500, str(e))
 
 @app.post("/api/sites/visit-windows-batch")
@@ -255,7 +258,7 @@ def get_site_visit_windows_batch(request: BatchSiteIdsRequest):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error getting batch site visit windows: {e}")
+        logger.error(f"Error getting batch site visit windows: {e}")
         raise HTTPException(500, str(e))
 
 @app.post("/api/sites/visit-cycle")
@@ -295,7 +298,7 @@ def update_site_visit_cycle(request: UpdateVisitCycleRequest):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error updating site visit cycle: {e}")
+        logger.error(f"Error updating site visit cycle: {e}")
         raise HTTPException(500, str(e))
 
 
@@ -319,7 +322,7 @@ def refresh_site_visit_windows(site_ids: Optional[List[int]] = None):
         }
         
     except Exception as e:
-        print(f"Error refreshing windows: {e}")
+        logger.error(f"Error refreshing windows: {e}")
         raise HTTPException(500, str(e))
 
 
@@ -353,7 +356,7 @@ def get_bulk_visit_windows(site_ids: List[int] = Query(...)):
         }
         
     except Exception as e:
-        print(f"Error getting bulk windows: {e}")
+        logger.error(f"Error getting bulk windows: {e}")
         raise HTTPException(500, str(e))
 
 
@@ -404,7 +407,7 @@ def enrich_jobs_with_visit_windows(jobs: List[Dict], sb) -> List[Dict]:
                 job['visit_window'] = None
                 
     except Exception as e:
-        print(f"Warning: Could not enrich jobs with visit windows: {e}")
+        logger.warning(f"Could not enrich jobs with visit windows: {e}")
         # Don't fail - just return jobs without window info
     
     return jobs
@@ -420,76 +423,47 @@ app.mount("/static", StaticFiles(directory=frontend_path), name="static")
 
 frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend")
 
-@app.get("/tech-manager", response_class=HTMLResponse)
-def serve_tech_manager():
-    """Serve the technician manager page"""
-    html_path = os.path.join(frontend_dir, "tech-manager.html")
+def serve_html_page(filename: str) -> str:
+    """Serve an HTML file from the frontend directory."""
+    html_path = os.path.join(frontend_dir, filename)
     if os.path.exists(html_path):
         with open(html_path, "r", encoding="utf-8") as f:
-            content = f.read()
-            # Add cache-busting timestamp
-            import time
-            cache_buster = f"<!-- Cache: {time.time()} -->"
-            content = content.replace("<body>", f"<body>{cache_buster}")
-            return content
-    raise HTTPException(404, "tech-manager.html not found in frontend directory")
+            return f.read()
+    raise HTTPException(404, f"{filename} not found")
+
+@app.get("/tech-manager", response_class=HTMLResponse)
+def serve_tech_manager():
+    return serve_html_page("tech-manager.html")
 
 @app.get("/analysis", response_class=HTMLResponse)
 def serve_analysis():
-    """Serve the analysis page"""
-    html_path = os.path.join(frontend_dir, "analysis.html")
-    if os.path.exists(html_path):
-        with open(html_path, "r", encoding="utf-8") as f:
-            return f.read()
-    raise HTTPException(404, "analysis.html not found")
+    return serve_html_page("analysis.html")
 
 @app.get("/schedule-dashboard", response_class=HTMLResponse)
 def serve_schedule_dashboard():
-    """Serve the schedule dashboard page"""
-    html_path = os.path.join(frontend_dir, "schedule-dashboard.html")
-    if os.path.exists(html_path):
-        with open(html_path, "r", encoding="utf-8") as f:
-            return f.read()
-    raise HTTPException(404, "schedule-dashboard.html not found")
+    return serve_html_page("schedule-dashboard.html")
 
 @app.get("/data-manager", response_class=HTMLResponse)
 def serve_data_manager():
-    """Serve the data manager page"""
-    html_path = os.path.join(frontend_dir, "data-manager.html")
-    if os.path.exists(html_path):
-        with open(html_path, "r", encoding="utf-8") as f:
-            return f.read()
-    raise HTTPException(404, "data-manager.html not found")
+    return serve_html_page("data-manager.html")
 
 @app.get("/schedule-review-dashboard", response_class=HTMLResponse)
 def serve_schedule_review_dashboard():
-    """Redirect old dashboard URL to scheduler-helper"""
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url="/scheduler-helper")
 
 @app.get("/", response_class=HTMLResponse)
 def redirect_to_main():
-    """Redirect root to scheduler-helper (main page)"""
-    html_path = os.path.join(frontend_dir, "scheduler-helper.html")
-    if os.path.exists(html_path):
-        with open(html_path, "r", encoding="utf-8") as f:
-            return f.read()
-    return {"message": "SchedulerGPT", "main_page": "/scheduler-helper"}
+    return serve_html_page("scheduler-helper.html")
 
 @app.get("/ai-scheduler", response_class=HTMLResponse)
 def serve_ai_scheduler():
-    """Redirect old AI scheduler URL to scheduler-helper"""
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url="/scheduler-helper")
 
 @app.get("/scheduler-helper", response_class=HTMLResponse)
 def serve_scheduler_helper():
-    """Serve the scheduler helper page (MAIN PAGE)"""
-    html_path = os.path.join(frontend_dir, "scheduler-helper.html")
-    if os.path.exists(html_path):
-        with open(html_path, "r", encoding="utf-8") as f:
-            return f.read()
-    raise HTTPException(404, "scheduler-helper.html not found")
+    return serve_html_page("scheduler-helper.html")
 
 
 class TechnicianModel(BaseModel):
@@ -524,20 +498,11 @@ class DeleteTimeOffRequest(BaseModel):
 
 @app.get("/current-schedule", response_class=HTMLResponse)
 def serve_current_schedule():
-    """Serve the current schedule view page"""
-    html_path = os.path.join(frontend_dir, "current-schedule.html")
-    if os.path.exists(html_path):
-        with open(html_path, "r", encoding="utf-8") as f:
-            return f.read()
-    raise HTTPException(404, "current-schedule.html not found")
+    return serve_html_page("current-schedule.html")
 
 @app.get("/schedule-viewer", response_class=HTMLResponse)
 def serve_schedule_viewer():
-    html_path = os.path.join(frontend_dir, "schedule-viewer.html")
-    if os.path.exists(html_path):
-        with open(html_path, "r", encoding="utf-8") as f:
-            return f.read()
-    raise HTTPException(404, "schedule-viewer.html not found")
+    return serve_html_page("schedule-viewer.html")
 
 
 # ============================================================================
@@ -566,9 +531,7 @@ def get_unscheduled_jobs(
     
     from datetime import datetime, timedelta
     
-    print(f"\n DEBUG get_unscheduled_jobs:")
-    print(f"  start_date received: {start_date}")
-    print(f"  end_date received: {end_date}")
+    logger.debug(f"get_unscheduled_jobs: start_date={start_date}, end_date={end_date}")
     
     # Build filters list
     filters = [("jp_status", "in", ["Call", "Waiting to Schedule"])]
@@ -576,17 +539,14 @@ def get_unscheduled_jobs(
     # Add date filters if provided
     if start_date:
         filters.append(("due_date", "gte", start_date))
-        print(f"   Added start filter: due_date >= {start_date}")
     if end_date:
         end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
         next_day = (end_date_obj + timedelta(days=1)).strftime("%Y-%m-%d")
         filters.append(("due_date", "lt", next_day))
-        print(f"   Added end filter: due_date < {next_day}")
-    print(f"  Final filters: {filters}")
     
     # Get jobs with filters
     jobs = sb_select("job_pool", filters=filters)
-    print(f"   Jobs returned: {len(jobs)}")
+    logger.debug(f"get_unscheduled_jobs: {len(jobs)} jobs returned from DB")
     
     if not jobs:
         return {"count": 0, "jobs": [], "summary": {}}
@@ -596,11 +556,9 @@ def get_unscheduled_jobs(
         jobs = [j for j in jobs if j.get("site_state") == region]
     if priority:
         jobs = [j for j in jobs if j.get("jp_priority") == priority]
-    print(f"   Jobs after region/priority filter: {len(jobs)}")
     
     # Apply limit
     jobs = jobs[:limit]
-    print(f"   Jobs after limit ({limit}): {len(jobs)}")
     
     # === BATCH FETCH VISIT WINDOWS (1 query instead of 500+) ===
     site_ids = list(set(j.get('site_id') for j in jobs if j.get('site_id')))
@@ -610,9 +568,8 @@ def get_unscheduled_jobs(
             sb = supabase_client()
             windows = sb.table('site_visit_windows').select('*').in_('site_id', site_ids).execute()
             window_lookup = {w['site_id']: w for w in (windows.data or [])}
-            print(f"   Fetched {len(window_lookup)} visit windows in batch")
         except Exception as e:
-            print(f"   Warning: Could not fetch visit windows: {e}")
+            logger.warning(f"Could not fetch visit windows: {e}")
     
     # === BATCH FETCH ELIGIBILITY (1 query instead of 500+) ===
     work_orders = [j["work_order"] for j in jobs]
@@ -627,9 +584,8 @@ def get_unscheduled_jobs(
                 if wo not in eligibility_lookup:
                     eligibility_lookup[wo] = []
                 eligibility_lookup[wo].append(e["technician_id"])
-            print(f"   Fetched eligibility for {len(eligibility_lookup)} jobs in batch")
         except Exception as e:
-            print(f"   Warning: Could not fetch eligibility: {e}")
+            logger.warning(f"Could not fetch eligibility: {e}")
     
     # Add metadata to each job
     for job in jobs:
@@ -685,7 +641,7 @@ def get_unscheduled_jobs(
         urg = job.get("urgency", "normal")
         summary["by_urgency"][urg] = summary["by_urgency"].get(urg, 0) + 1
     
-    print(f"   Returning {len(jobs)} jobs to frontend\n")
+    logger.debug(f"get_unscheduled_jobs: returning {len(jobs)} jobs")
     return {
         "count": len(jobs),
         "jobs": jobs,
@@ -740,7 +696,7 @@ def get_jobs_in_region(
     ).execute()
     
     jobs = result.data or []
-    print(f"  /api/jobs/region: tech={tech_id}, region={region}, found {len(jobs)} jobs")
+    logger.debug(f"/api/jobs/region: tech={tech_id}, region={region}, found {len(jobs)} jobs")
     
     return {
         "jobs": jobs,
@@ -862,7 +818,7 @@ def is_next_day(date1_str, date2_str):
             return True
             
         return False
-    except:
+    except (ValueError, TypeError):
         return False
 
 
@@ -1248,7 +1204,7 @@ def add_secondary_tech(req: AddSecondaryTechRequest):
             "secondary_tech_id": req.secondary_tech_id
         }
     except Exception as e:
-        print(f" Error adding secondary tech: {e}")
+        logger.error(f"Error adding secondary tech: {e}")
         return {"success": False, "error": str(e)}
 
 
@@ -1275,36 +1231,40 @@ def get_all_additional_techs(week_start: str = None):
     try:
         # Get all additional tech assignments
         addl_techs = sb.table("scheduled_job_additional_techs").select("*").execute()
-        
+
         if not addl_techs.data:
             return {"success": True, "additional_techs": []}
-        
-        # Get related job and tech info
+
+        # Batch-load all referenced work orders and tech IDs (2 queries instead of N*2)
+        work_orders = list(set(a['work_order'] for a in addl_techs.data))
+        tech_ids = list(set(a['technician_id'] for a in addl_techs.data))
+
+        all_jobs = sb_select("scheduled_jobs", filters=[("work_order", "in", work_orders)])
+        jobs_by_wo = {j['work_order']: j for j in all_jobs}
+
+        all_techs = sb_select("technicians", filters=[("technician_id", "in", tech_ids)])
+        techs_by_id = {t['technician_id']: t for t in all_techs}
+
         result = []
         for addl in addl_techs.data:
-            # Get job details
-            job = sb_select("scheduled_jobs", filters=[("work_order", "eq", addl['work_order'])])
+            job = jobs_by_wo.get(addl['work_order'])
             if not job:
                 continue
-            
-            job = job[0]
-            
+
             # Filter by week if specified
             if week_start:
-                from datetime import datetime, timedelta
                 start_date = datetime.fromisoformat(week_start).date()
                 end_date = start_date + timedelta(days=4)
                 job_date = datetime.fromisoformat(job['date']).date() if job.get('date') else None
                 if not job_date or not (start_date <= job_date <= end_date):
                     continue
-            
-            # Get tech name
-            tech = sb_select("technicians", filters=[("technician_id", "eq", addl['technician_id'])])
-            
+
+            tech = techs_by_id.get(addl['technician_id'])
+
             result.append({
                 "work_order": addl['work_order'],
                 "technician_id": addl['technician_id'],
-                "tech_name": tech[0]['name'] if tech else f"Tech {addl['technician_id']}",
+                "tech_name": tech['name'] if tech else f"Tech {addl['technician_id']}",
                 "date": job.get('date'),
                 "site_name": job.get('site_name'),
                 "site_city": job.get('site_city'),
@@ -1313,11 +1273,11 @@ def get_all_additional_techs(week_start: str = None):
                 "primary_tech_name": job.get('assigned_tech_name'),
                 "sow_1": job.get('sow_1')
             })
-        
+
         return {"success": True, "additional_techs": result}
-        
+
     except Exception as e:
-        print(f" Error getting additional techs: {e}")
+        logger.error(f"Error getting additional techs: {e}")
         return {"success": False, "additional_techs": [], "error": str(e)}
 
 
@@ -1388,7 +1348,7 @@ def get_full_week_schedule(week_start: str):
                 
                 # Check if tech has home location
                 if tech_id not in tech_homes:
-                    print(f" Warning: Tech {tech_id} has no home location, using defaults")
+                    logger.warning(f"Tech {tech_id} has no home location, using defaults")
                     for job in daily_jobs:
                         job['initial_drive_hours'] = 0.5
                         job['drive_time'] = 0
@@ -1502,7 +1462,7 @@ def get_full_week_schedule(week_start: str):
                                 names.append(t['name'])
                         job['additional_tech_names'] = names
         except Exception as e:
-            print(f"Warning: Could not fetch additional techs: {e}")
+            logger.warning(f"Could not fetch additional techs: {e}")
         
         return {
             "week_start": str(start_date),
@@ -1512,8 +1472,8 @@ def get_full_week_schedule(week_start: str):
         
     except Exception as e:
         import traceback
-        print(f" Error in get_full_week_schedule: {str(e)}")
-        print(traceback.format_exc())
+        logger.error(f"Error in get_full_week_schedule: {str(e)}")
+        logger.error(traceback.format_exc())
         raise HTTPException(500, f"Failed to load week: {str(e)}")
 
 
@@ -1842,28 +1802,20 @@ async def upload_jobs(file: UploadFile = File(...)):
             except UnicodeDecodeError:
                 pass
             
-            # Method 2: Try Latin-1 (handles Spanish characters like ÃƒÂ±)
+            # Method 2: Try Latin-1 (handles Spanish characters)
             if df is None:
                 try:
                     df = pd.read_csv(io.BytesIO(contents), encoding='latin-1')
                     encoding_used = "Latin-1"
-                except:
+                except (UnicodeDecodeError, pd.errors.ParserError):
                     pass
-            
+
             # Method 3: Try Windows-1252 (common Excel encoding)
             if df is None:
                 try:
                     df = pd.read_csv(io.BytesIO(contents), encoding='cp1252')
                     encoding_used = "Windows-1252"
-                except:
-                    pass
-            
-            # Method 4: Try with error handling
-            if df is None:
-                try:
-                    df = pd.read_csv(io.BytesIO(contents), encoding='utf-8', errors='ignore')
-                    encoding_used = "UTF-8 (errors ignored)"
-                except:
+                except (UnicodeDecodeError, pd.errors.ParserError):
                     pass
             
             if df is None:
@@ -1872,7 +1824,7 @@ async def upload_jobs(file: UploadFile = File(...)):
                     detail="Cannot read CSV file. File contains characters that cannot be decoded. Try saving as plain ASCII or contact support."
                 )
             
-            print(f"Successfully read CSV using {encoding_used} encoding")
+            logger.info(f"Successfully read CSV using {encoding_used} encoding")
             
         elif file.filename.endswith(('.xlsx', '.xls')):
             contents = await file.read()
@@ -1972,9 +1924,9 @@ async def upload_jobs(file: UploadFile = File(...)):
             try:
                 result = sb.table('stg_job_pool').insert(batch).execute()
                 total_inserted += len(batch)
-                print(f"Batch {i//batch_size + 1} inserted successfully")
+                logger.info(f"Batch {i//batch_size + 1} inserted successfully")
             except Exception as batch_error:
-                print(f"Batch {i//batch_size + 1} failed: {str(batch_error)}")
+                logger.error(f"Batch {i//batch_size + 1} failed: {str(batch_error)}")
                 # Try individual records
                 for record in batch:
                     try:
@@ -1983,7 +1935,7 @@ async def upload_jobs(file: UploadFile = File(...)):
                     except Exception as record_error:
                         wo = record.get('work_order', 'unknown')
                         failed_records.append(wo)
-                        print(f"Failed WO {wo}: {str(record_error)[:100]}")
+                        logger.error(f"Failed WO {wo}: {str(record_error)[:100]}")
         
         if failed_records:
             validation["warnings"].append(f"Failed to insert {len(failed_records)} records: {failed_records[:10]}")
@@ -2000,9 +1952,7 @@ async def upload_jobs(file: UploadFile = File(...)):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Upload error: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Upload error: {str(e)}", exc_info=True)
         
         return {
             "validation": {
@@ -2027,44 +1977,66 @@ async def process_staging():
     - Updates existing non-scheduled jobs (sow_1, due_date, etc.)
     - Skips jobs already marked as 'Scheduled'
     """
+    import json
+    import re
+
     try:
         from supabase_client import supabase_client
         sb = supabase_client()
-        
+
         # Call the import function
         result = sb.rpc('import_new_jobs').execute()
-        
+
         # Result.data should contain our JSONB response
         if result.data:
+            # Handle case where Supabase wraps response in error-like structure
+            if isinstance(result.data, dict) and 'details' in result.data and '"success"' in str(result.data.get('details', '')):
+                details = result.data['details']
+                # details may be a byte string like b'{...}'
+                if isinstance(details, (bytes, bytearray)):
+                    return json.loads(details.decode('utf-8'))
+                elif isinstance(details, str):
+                    # Strip b'...' wrapper if present
+                    cleaned = re.sub(r"^b'(.*)'$", r'\1', details)
+                    return json.loads(cleaned)
             return result.data
         else:
             return {"success": True, "message": "Processing complete"}
-            
+
     except Exception as e:
         error_str = str(e)
-        
-        # The Supabase client throws an error but the function actually succeeded
+
+        # The Supabase client sometimes throws an error but the function actually succeeded
         # Extract the actual result from the error message
-        if '"success":' in error_str:
-            import json
-            import re
-            # Find JSON object in the error string
-            match = re.search(r"b'(\{.*\})'", error_str)
+        if '"success"' in error_str:
+            # Try to find a JSON object containing the actual result
+            # Pattern 1: b'{...}' byte string in error
+            match = re.search(r"b'(\{.*?\})'", error_str)
             if match:
                 try:
                     json_str = match.group(1).replace('\\"', '"')
                     return json.loads(json_str)
-                except:
+                except (json.JSONDecodeError, ValueError):
                     pass
-            
-            # Try another pattern
-            match = re.search(r'\{[^{}]*"success"[^{}]*"message"[^{}]*\}', error_str)
+
+            # Pattern 2: raw JSON in error string
+            match = re.search(r'(\{[^{}]*"success"\s*:\s*true[^{}]*\})', error_str)
             if match:
                 try:
-                    return json.loads(match.group())
-                except:
+                    return json.loads(match.group(1))
+                except (json.JSONDecodeError, ValueError):
                     pass
-        
+
+            # Pattern 3: details field contains the response
+            match = re.search(r"'details':\s*\"(b?'?\{.*?\}'?)\"", error_str)
+            if match:
+                try:
+                    cleaned = match.group(1).strip("b'\"")
+                    return json.loads(cleaned)
+                except (json.JSONDecodeError, ValueError):
+                    pass
+
+        logger.error(f"Process staging error: {error_str}")
         return {"success": False, "error": error_str}
     
 # ============================================
@@ -2111,7 +2083,7 @@ async def add_single_job(job: SingleJob):
         }
         
     except Exception as e:
-        print(f"Add job error: {e}")
+        logger.error(f"Add job error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/remove-jobs")
@@ -2160,7 +2132,7 @@ async def remove_jobs(request: RemoveJobRequest):
                     archived_count += 1
                     
             except Exception as archive_error:
-                print(f"Error archiving job {work_order}: {archive_error}")
+                logger.error(f"Error archiving job {work_order}: {archive_error}")
                 # Continue to delete even if archive fails
         
         # Remove from scheduled_jobs if they exist there
@@ -2177,7 +2149,7 @@ async def remove_jobs(request: RemoveJobRequest):
         }
         
     except Exception as e:
-        print(f"Remove jobs error: {e}")
+        logger.error(f"Remove jobs error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================
@@ -2208,12 +2180,18 @@ async def recalculate_eligibility():
         }
         
     except Exception as e:
-        print(f"Recalculation error: {e}")
+        logger.error(f"Recalculation error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================
 # DATABASE STATUS
 # ============================================
+
+ALLOWED_JOB_FIELDS = {
+    'site_name', 'site_address', 'site_city', 'site_state', 'site_zip',
+    'sow_1', 'sow_2', 'duration', 'due_date', 'jp_priority', 'jp_status',
+    'region', 'notes', 'latitude', 'longitude', 'gps', 'site_id',
+}
 
 @app.post("/api/job/update")
 async def update_job_field(request: dict):
@@ -2221,11 +2199,16 @@ async def update_job_field(request: dict):
     try:
         from supabase_client import supabase_client
         sb = supabase_client()
-        
+
         work_order = request.get('work_order')
         field = request.get('field')
         value = request.get('value')
-        
+
+        if not work_order or not field:
+            raise HTTPException(status_code=400, detail="work_order and field are required")
+        if field not in ALLOWED_JOB_FIELDS:
+            raise HTTPException(status_code=400, detail=f"Field '{field}' is not allowed for update")
+
         # Update the job
         result = sb.table('job_pool').update({field: value}).eq('work_order', work_order).execute()
         
@@ -2238,7 +2221,7 @@ async def update_job_field(request: dict):
         }
         
     except Exception as e:
-        print(f"Update job error: {e}")
+        logger.error(f"Update job error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/database-status")
@@ -2282,7 +2265,7 @@ async def get_database_status():
         }
         
     except Exception as e:
-        print(f"Status error: {e}")
+        logger.error(f"Status error: {e}")
         return {
             "total_jobs": 0,
             "scheduled_jobs": 0,
@@ -2316,7 +2299,7 @@ async def preview_staging():
         }
         
     except Exception as e:
-        print(f"Preview error: {e}")
+        logger.error(f"Preview error: {e}")
         return {
             "total_count": 0,
             "preview_rows": [],
@@ -2502,7 +2485,7 @@ def recalculate_eligibility_for_tech(tech_id: int):
     if eligible_jobs:
         sb_insert("job_technician_eligibility", eligible_jobs)
     
-    print(f" Recalculated eligibility for Tech {tech_id}: {len(eligible_jobs)} eligible jobs")
+    logger.info(f"Recalculated eligibility for Tech {tech_id}: {len(eligible_jobs)} eligible jobs")
 
 # ============================================================================
 # TIME OFF MANAGEMENT
@@ -2798,7 +2781,7 @@ def get_all_techs_availability_batch(week_start: str):
         return {"availability": availability}
         
     except Exception as e:
-        print(f"Error in availability-batch: {e}")
+        logger.error(f"Error in availability-batch: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(500, str(e))
@@ -2825,7 +2808,7 @@ async def get_single_job(work_order: int):
         return result.data[0]
         
     except Exception as e:
-        print(f"Get job error: {e}")
+        logger.error(f"Get job error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/jobs/all")
@@ -2864,7 +2847,7 @@ async def get_all_jobs(
         return result.data
         
     except Exception as e:
-        print(f"Get all jobs error: {e}")
+        logger.error(f"Get all jobs error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 class ArchiveJobRequest(BaseModel):
@@ -2925,7 +2908,7 @@ async def archive_job(request: ArchiveJobRequest):
         }
         
     except Exception as e:
-        print(f"Archive job error: {e}")
+        logger.error(f"Archive job error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -3227,10 +3210,119 @@ async def send_test_email():
         """
         
         send_email("ryan@cgrs.com", "CGRS Scheduler - Test Email", test_html)
-        
+
         return {"success": True, "message": "Test email sent to ryan@cgrs.com"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# ROUTE TEMPLATE BUILDER ENDPOINTS
+# ============================================================================
+
+@app.get("/api/route-templates/last-month")
+def api_get_last_month_routes(reference_date: str = None):
+    """Get routes from last month grouped by tech + week."""
+    try:
+        from route_template_builder import get_last_month_routes
+        return get_last_month_routes(reference_date)
+    except Exception as e:
+        logger.error(f"Error getting last month routes: {e}", exc_info=True)
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/route-templates/{route_id}/historical-pairings")
+def api_get_historical_pairings(
+    route_id: str,
+    years_back: int = 3,
+    min_overlap: int = 3,
+    week_flexibility: int = 1
+):
+    """Find sites that were historically done with the given route's sites."""
+    try:
+        from route_template_builder import get_last_month_routes, find_historically_paired_sites
+
+        routes_data = get_last_month_routes()
+        route = None
+        for r in routes_data.get('routes', []):
+            if r['route_id'] == route_id:
+                route = r
+                break
+
+        if not route:
+            raise HTTPException(404, f"Route {route_id} not found")
+
+        return find_historically_paired_sites(
+            route['site_ids'],
+            route['week_number'],
+            years_back=years_back,
+            min_overlap=min_overlap,
+            week_flexibility=week_flexibility
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting historical pairings: {e}", exc_info=True)
+        raise HTTPException(500, str(e))
+
+
+class BuildPoolRequest(BaseModel):
+    route_id: str
+    reference_date: Optional[str] = None
+    due_date_end: Optional[str] = None
+    priority_within_days: int = 10
+    max_annual_distance: float = 50
+    years_back: int = 3
+    min_historical_overlap: int = 3
+
+
+@app.post("/api/route-templates/build-pool")
+def api_build_pool_from_template(request: BuildPoolRequest):
+    """Build a complete job pool from a route template."""
+    try:
+        from route_template_builder import build_pool_from_template
+
+        return build_pool_from_template(
+            route_id=request.route_id,
+            reference_date=request.reference_date,
+            due_date_end=request.due_date_end,
+            priority_within_days=request.priority_within_days,
+            max_annual_distance=request.max_annual_distance,
+            years_back=request.years_back,
+            min_historical_overlap=request.min_historical_overlap
+        )
+    except Exception as e:
+        logger.error(f"Error building pool from template: {e}", exc_info=True)
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/route-templates/nearby-annuals")
+def api_get_nearby_annuals(
+    site_ids: str,
+    due_within_days: int = 30,
+    priority_within_days: int = 10,
+    max_distance: float = 50
+):
+    """Get annual jobs near a set of sites."""
+    try:
+        from route_template_builder import get_nearby_annuals
+
+        site_id_list = [int(s.strip()) for s in site_ids.split(',') if s.strip()]
+
+        if not site_id_list:
+            raise HTTPException(400, "No valid site IDs provided")
+
+        return get_nearby_annuals(
+            site_id_list,
+            due_within_days=due_within_days,
+            priority_within_days=priority_within_days,
+            max_distance_miles=max_distance
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting nearby annuals: {e}", exc_info=True)
+        raise HTTPException(500, str(e))
 
 
 # ============================================================================

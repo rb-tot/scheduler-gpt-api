@@ -240,10 +240,10 @@ def check_time_off(supabase_client, tech_id: int, check_date: str) -> Tuple[bool
         return False, 12.0, ""  # No time off, full day available (12h default)
     
     time_off = result.data[0]
-    hours_off = float(time_off.get('hours_per_day', 4))
     reason = time_off.get('reason', 'Time off')
-    
-    # Calculate available hours (assume 12h max day - hours off)
-    hours_available = max(0, 12 - hours_off)
-    
+
+    # hours_per_day stores HOURS AVAILABLE (not hours off)
+    # 0 = full day off, 4 = 4 hours available, 8 = full day available
+    hours_available = float(time_off.get('hours_per_day', 0))
+
     return True, hours_available, reason

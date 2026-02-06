@@ -44,7 +44,6 @@ class FutureScheduledJob:
 def get_existing_schedule(tech_id: int, week_start: date, week_end: date) -> Dict[str, List[ScheduledJob]]:
     """Get all jobs already scheduled for tech during the week"""
     global _job_regions_cache
-    _job_regions_cache = {}  # Clear cache for each run
     sb = supabase_client()
 
 
@@ -202,9 +201,13 @@ def should_go_early_to_region(
 ) -> bool:
     """
     Determine if we should go to a region early.
-    ALWAYS go toward future scheduled work - don't stay home doing unrelated jobs.
+    Returns True if the drive time justifies going early.
     """
-    return True
+    if days_until <= 1:
+        return True
+    if drive_hours > 2.0 and days_until <= 2:
+        return True
+    return drive_hours > 3.0
 # ============================================================================
 # FRESHNESS CHECK FUNCTIONS
 # ============================================================================
@@ -431,7 +434,7 @@ def find_jobs_along_corridor(
         
         jobs.append(Job(
             work_order=row['work_order'],
-            site_id=0,  # Not returned by function
+            site_id=row.get('site_id', 0),
             site_name=row['site_name'],
             site_city=row['site_city'],
             latitude=float(row['latitude']),
@@ -541,7 +544,7 @@ def find_nearest_job_any_region(
         
         job = Job(
             work_order=row['work_order'],
-            site_id=0,
+            site_id=row.get('site_id', 0),
             site_name=row['site_name'],
             site_city=row['site_city'],
             latitude=float(row['latitude']),

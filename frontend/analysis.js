@@ -1,6 +1,6 @@
 // Monthly Analysis JavaScript
 const API_BASE = '/';
-const API_KEY = 'devkey123';
+const API_KEY = '';
 
 // Loading function
 function showLoading() {
