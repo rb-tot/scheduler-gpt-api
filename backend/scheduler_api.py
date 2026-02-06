@@ -2,6 +2,9 @@
 import os
 import logging
 import threading
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 logger = logging.getLogger(__name__)
 from datetime import datetime, date, timedelta
@@ -15,7 +18,13 @@ from scheduler_fillin import schedule_week_fillin
 import pandas as pd
 import io
 import scheduler_v5_geographic as sched_v5
-
+from route_template_builder import (
+    get_last_month_routes,
+    find_historically_paired_sites,
+    match_sites_to_current_jobs,
+    get_nearby_annuals,
+    build_pool_from_template
+)
 _db_semaphore = threading.Semaphore(10)
 
 # Environment setup
@@ -24,6 +33,10 @@ load_dotenv()
 
 API_KEY = os.getenv("ACTIONS_API_KEY", "devkey123")
 BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000")
+
+# Gmail SMTP config
+GMAIL_ADDRESS = os.getenv("GMAIL_ADDRESS", "cgrs.scheduler@gmail.com")
+GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "")
 
 # Import your existing modules
 try:
@@ -479,6 +492,10 @@ class TimeOffEntry(BaseModel):
 class SaveTimeOffRequest(BaseModel):
     time_off: List[TimeOffEntry]
 
+class DeleteTimeOffRequest(BaseModel):
+    technician_id: int
+    dates: Optional[List[str]] = None  # If None, delete all
+
 @app.get("/current-schedule", response_class=HTMLResponse)
 def serve_current_schedule():
     return serve_html_page("current-schedule.html")
@@ -827,6 +844,159 @@ def get_scheduled_sites(year: int = None):
     site_ids = list(set(j['site_id'] for j in result.data if j.get('site_id')))
     
     return {"scheduled_site_ids": site_ids, "count": len(site_ids)}
+# ============================================================================
+# ROUTE TEMPLATE BUILDER ENDPOINTS
+# Add these to scheduler_api.py after the existing historical routes endpoints
+# ============================================================================
+
+@app.get("/api/route-templates/last-month")
+def api_get_last_month_routes(reference_date: str = None):
+    """
+    Get routes from last month grouped by tech + week.
+    These serve as templates for building job pools.
+    
+    Args:
+        reference_date: Optional. The date you're scheduling FOR (YYYY-MM-DD).
+                       Defaults to today. System looks ~4 weeks back.
+    
+    Returns:
+        List of route templates with site IDs, regions, and totals.
+    """
+    try:
+        from route_template_builder import get_last_month_routes
+        return get_last_month_routes(reference_date)
+    except Exception as e:
+        print(f"Error getting last month routes: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/route-templates/{route_id}/historical-pairings")
+def api_get_historical_pairings(
+    route_id: str,
+    years_back: int = 3,
+    min_overlap: int = 3,
+    week_flexibility: int = 1
+):
+    """
+    Find sites that were historically done with the given route's sites.
+    
+    Args:
+        route_id: The route template ID (e.g., "5_2024_W50")
+        years_back: How many years to search (default 3)
+        min_overlap: Minimum site overlap to consider a match (default 3)
+        week_flexibility: +/- weeks to search around target week (default 1)
+    """
+    try:
+        from route_template_builder import get_last_month_routes, find_historically_paired_sites
+        
+        # Get the route to find its site_ids and week_number
+        routes_data = get_last_month_routes()
+        route = None
+        for r in routes_data.get('routes', []):
+            if r['route_id'] == route_id:
+                route = r
+                break
+        
+        if not route:
+            raise HTTPException(404, f"Route {route_id} not found")
+        
+        return find_historically_paired_sites(
+            route['site_ids'],
+            route['week_number'],
+            years_back=years_back,
+            min_overlap=min_overlap,
+            week_flexibility=week_flexibility
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting historical pairings: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, str(e))
+
+
+class BuildPoolRequest(BaseModel):
+    route_id: str
+    reference_date: Optional[str] = None  # YYYY-MM-DD - the date we're scheduling FOR
+    due_date_end: Optional[str] = None    # YYYY-MM-DD - only include jobs due on or before this date
+    priority_within_days: int = 10
+    max_annual_distance: float = 50
+    years_back: int = 3
+    min_historical_overlap: int = 3
+
+
+@app.post("/api/route-templates/build-pool")
+def api_build_pool_from_template(request: BuildPoolRequest):
+    """
+    Build a complete job pool from a route template.
+    
+    Combines:
+    1. Current MOI jobs for template sites
+    2. Historically paired annuals (with current work orders)
+    3. Nearby annuals due within the specified window
+    
+    Returns categorized pool ready for scheduling.
+    """
+    try:
+        from route_template_builder import build_pool_from_template
+        
+        return build_pool_from_template(
+            route_id=request.route_id,
+            reference_date=request.reference_date,
+            due_date_end=request.due_date_end,
+            priority_within_days=request.priority_within_days,
+            max_annual_distance=request.max_annual_distance,
+            years_back=request.years_back,
+            min_historical_overlap=request.min_historical_overlap
+        )
+    except Exception as e:
+        print(f"Error building pool from template: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/route-templates/nearby-annuals")
+def api_get_nearby_annuals(
+    site_ids: str,  # Comma-separated list
+    due_within_days: int = 30,
+    priority_within_days: int = 10,
+    max_distance: float = 50
+):
+    """
+    Get annual jobs near a set of sites.
+    Useful for manually adding annuals to a pool.
+    
+    Args:
+        site_ids: Comma-separated list of site IDs
+        due_within_days: Include jobs due within this window
+        priority_within_days: Flag jobs due within this as priority
+        max_distance: Max distance in miles from route center
+    """
+    try:
+        from route_template_builder import get_nearby_annuals
+        
+        site_id_list = [int(s.strip()) for s in site_ids.split(',') if s.strip()]
+        
+        if not site_id_list:
+            raise HTTPException(400, "No valid site IDs provided")
+        
+        return get_nearby_annuals(
+            site_id_list,
+            due_within_days=due_within_days,
+            priority_within_days=priority_within_days,
+            max_distance_miles=max_distance
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting nearby annuals: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, str(e))
 
 
 @app.post("/api/schedule/assign")
@@ -840,7 +1010,7 @@ def assign_single_job(req: AssignJobRequest):
     
     job = job[0]
     
-    # 2. Get technician details  ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Ãƒâ€šÃ‚Â ADD THIS SECTION
+    # 2. Get technician details  ÃƒÂ¢Ã¢â‚¬Â Ã‚Â ADD THIS SECTION
     tech_result = sb_select("technicians", filters=[("technician_id", "eq", req.technician_id)])
     if not tech_result:
         return {"success": False, "errors": [f"Technician {req.technician_id} not found"]}
@@ -884,6 +1054,7 @@ def assign_single_job(req: AssignJobRequest):
     "due_date": job.get("due_date"),
     "latitude": job.get("latitude"),
     "longitude": job.get("longitude"),
+    "site_address": job.get("site_address"),
     "is_night_job": job.get("night_test", False)
     }
     
@@ -1389,7 +1560,7 @@ def monthly_analysis(year: int, month: int):
             work_hours = stats['work_hours']
             
             # Estimate drive time for this region
-            # Formula: (jobs - 1) ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â avg_distance_between_jobs + 2 ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â home_to_region
+            # Formula: (jobs - 1) ÃƒÆ’Ã¢â‚¬â€ avg_distance_between_jobs + 2 ÃƒÆ’Ã¢â‚¬â€ home_to_region
             if job_count > 0:
                 # Intra-region driving (between jobs)
                 intra_region_miles = (job_count - 1) * AVG_INTRA_REGION_DISTANCE if job_count > 1 else 0
@@ -2360,10 +2531,6 @@ def get_technician_time_off(
         "time_off": expanded
     }
 
-class DeleteTimeOffRequest(BaseModel):
-    technician_id: int
-    dates: Optional[List[str]] = None  # If None, delete all; if provided, delete specific dates
-
 @app.post("/api/timeoff/save")
 def save_time_off(req: SaveTimeOffRequest):
     """
@@ -2406,7 +2573,7 @@ def save_time_off(req: SaveTimeOffRequest):
     except Exception as e:
         raise HTTPException(500, f"Failed to save time off: {str(e)}")
 
-@app.post("/api/timeoff/delete")
+@app.delete("/api/technicians/time-off")
 def delete_time_off(req: DeleteTimeOffRequest):
     """
     Delete time off entries for a technician.
@@ -2438,7 +2605,7 @@ def delete_time_off(req: DeleteTimeOffRequest):
             }
     
     except Exception as e:
-        raise HTTPException(500, f"Failed to delete time off: {str(e)}")
+        raise HTTPException(500, f"Failed to delete time off: {str(e)}")   
 
 # ============================================================================
 # HELPER FUNCTION FOR SCHEDULING
@@ -2742,6 +2909,310 @@ async def archive_job(request: ArchiveJobRequest):
         
     except Exception as e:
         logger.error(f"Archive job error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# EMAIL SCHEDULE TO TECHNICIANS
+# ============================================================================
+
+class TechEmailNote(BaseModel):
+    technician_id: int
+    note: str = ""
+
+class SendScheduleEmailRequest(BaseModel):
+    week_start: str  # YYYY-MM-DD
+    tech_notes: List[TechEmailNote] = []
+    cc_email: str = "ryan@cgrs.com"
+    send_master: bool = True
+    master_recipients: List[str] = ["kbaker@cgrs.com", "jduggan@cgrs.com"]
+
+
+def build_tech_schedule_html(tech_name: str, week_start: str, jobs: list, time_off: list, note: str = "") -> str:
+    """Build an HTML email body for one technician's weekly schedule."""
+    start_date = datetime.fromisoformat(week_start).date()
+    days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+    
+    # Group jobs by date
+    jobs_by_date = {}
+    for job in jobs:
+        d = job.get('date', '')
+        if d not in jobs_by_date:
+            jobs_by_date[d] = []
+        jobs_by_date[d].append(job)
+    
+    # Build time off lookup
+    off_by_date = {}
+    for to in time_off:
+        d = to.get('start_date', '') 
+        off_by_date[d] = to.get('reason', 'Time Off')
+    
+    html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 700px;">
+        <div style="background: #1e3a5f; color: white; padding: 15px 20px; border-radius: 8px 8px 0 0;">
+            <h2 style="margin: 0;">{tech_name} - Schedule for Week of {start_date.strftime('%B %d, %Y')}</h2>
+        </div>
+    """
+    
+    if note:
+        html += f"""
+        <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 10px 15px; margin: 0;">
+            <strong>Notes:</strong> {note}
+        </div>
+        """
+    
+    html += """
+        <table style="border-collapse: collapse; width: 100%; font-size: 13px; border: 1px solid #ddd;">
+            <thead>
+                <tr>
+                    <th style="background: #f3f4f6; padding: 10px; border: 1px solid #ddd; text-align: left; width: 120px;">Day</th>
+                    <th style="background: #f3f4f6; padding: 10px; border: 1px solid #ddd; text-align: left;">Site</th>
+                    <th style="background: #f3f4f6; padding: 10px; border: 1px solid #ddd; text-align: left;">Address</th>
+                    <th style="background: #f3f4f6; padding: 10px; border: 1px solid #ddd; text-align: left;">City</th>
+                    <th style="background: #f3f4f6; padding: 10px; border: 1px solid #ddd; text-align: left;">SOW</th>
+                </tr>
+            </thead>
+            <tbody>
+    """
+    
+    for i in range(5):
+        current_date = start_date + timedelta(days=i)
+        date_str = str(current_date)
+        day_label = f"{days[i]} {current_date.month}/{current_date.day}"
+        row_bg = '#ffffff' if i % 2 == 0 else '#f9fafb'
+        
+        if date_str in off_by_date:
+            html += f"""
+                <tr style="background: #fee2e2;">
+                    <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">{day_label}</td>
+                    <td colspan="4" style="padding: 10px; border: 1px solid #ddd; color: #dc2626; font-style: italic;">{off_by_date[date_str]}</td>
+                </tr>
+            """
+        elif date_str in jobs_by_date:
+            day_jobs = sorted(jobs_by_date[date_str], key=lambda j: j.get('start_time') or '08:00')
+            for j_idx, job in enumerate(day_jobs):
+                site_name = job.get('site_name', '')
+                work_order = job.get('work_order', '')
+                address = job.get('site_address') or job.get('address', '')
+                city = job.get('site_city', '')
+                state = job.get('site_state', '')
+                city_state = f"{city}, {state}" if state else city
+                sow = job.get('sow_1', '')
+                
+                # Link site name to CGRS Connect
+                site_link = f'<a href="https://connect.cgrs.com/CGRSConnect/WorkOrder/Create?workOrderId={work_order}" style="color: #2563eb; text-decoration: none;">{site_name}</a>' if work_order else site_name
+                
+                html += f"""
+                    <tr style="background: {row_bg};">
+                        {'<td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;" rowspan="' + str(len(day_jobs)) + '">' + day_label + '</td>' if j_idx == 0 else ''}
+                        <td style="padding: 10px; border: 1px solid #ddd;">{site_link}</td>
+                        <td style="padding: 10px; border: 1px solid #ddd;">{address}</td>
+                        <td style="padding: 10px; border: 1px solid #ddd;">{city_state}</td>
+                        <td style="padding: 10px; border: 1px solid #ddd;">{sow}</td>
+                    </tr>
+                """
+        else:
+            html += f"""
+                <tr style="background: {row_bg};">
+                    <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">{day_label}</td>
+                    <td colspan="4" style="padding: 10px; border: 1px solid #ddd; color: #999;">No jobs scheduled</td>
+                </tr>
+            """
+    
+    html += """
+            </tbody>
+        </table>
+        <p style="color: #666; font-size: 11px; margin-top: 10px;">Sent from CGRS Scheduler</p>
+    </div>
+    """
+    return html
+
+
+def build_master_schedule_html(week_start: str, all_tech_schedules: list) -> str:
+    """Build combined HTML with all tech schedules for the master email."""
+    start_date = datetime.fromisoformat(week_start).date()
+    
+    html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 800px;">
+        <div style="background: #1e3a5f; color: white; padding: 15px 20px; border-radius: 8px;">
+            <h2 style="margin: 0;">Master Schedule - Week of {start_date.strftime('%B %d, %Y')}</h2>
+        </div>
+        <hr style="border: none; border-top: 2px solid #ddd; margin: 20px 0;">
+    """
+    
+    for entry in all_tech_schedules:
+        html += entry['html']
+        html += '<hr style="border: none; border-top: 2px solid #ddd; margin: 20px 0;">'
+    
+    html += """
+        <p style="color: #666; font-size: 11px;">Sent from CGRS Scheduler</p>
+    </div>
+    """
+    return html
+
+
+def send_email(to_addr: str, subject: str, html_body: str, cc_addrs: list = None):
+    """Send an HTML email via Gmail SMTP."""
+    if not GMAIL_APP_PASSWORD:
+        raise ValueError("GMAIL_APP_PASSWORD not configured in environment variables")
+    
+    msg = MIMEMultipart('alternative')
+    msg['From'] = f"CGRS Scheduler <{GMAIL_ADDRESS}>"
+    msg['To'] = to_addr
+    msg['Subject'] = subject
+    
+    all_recipients = [to_addr]
+    if cc_addrs:
+        msg['Cc'] = ', '.join(cc_addrs)
+        all_recipients.extend(cc_addrs)
+    
+    msg.attach(MIMEText(html_body, 'html'))
+    
+    with smtplib.SMTP('smtp.gmail.com', 587) as server:
+        server.starttls()
+        server.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
+        server.sendmail(GMAIL_ADDRESS, all_recipients, msg.as_string())
+
+
+@app.post("/api/send-schedule-emails")
+async def send_schedule_emails(request: SendScheduleEmailRequest):
+    """Send weekly schedule emails to all techs with jobs, plus master email."""
+    try:
+        if not GMAIL_APP_PASSWORD:
+            raise HTTPException(status_code=500, detail="Gmail app password not configured. Add GMAIL_APP_PASSWORD to .env")
+        
+        start_date = datetime.fromisoformat(request.week_start).date()
+        end_date = start_date + timedelta(days=4)
+        
+        # Get scheduled jobs for the week
+        scheduled_jobs = sb_select("scheduled_jobs", filters=[
+            ("date", "gte", str(start_date)),
+            ("date", "lte", str(end_date))
+        ])
+        
+        if not scheduled_jobs:
+            return {"success": False, "message": "No scheduled jobs found for this week"}
+        
+        # Get all active technicians
+        technicians = sb_select("technicians", filters=[("active", "eq", True)])
+        tech_lookup = {t['technician_id']: t for t in technicians}
+        
+        # Get time off for the week
+        time_off = sb_select("time_off_requests", filters=[
+            ("start_date", "lte", str(end_date)),
+            ("end_date", "gte", str(start_date))
+        ])
+        
+        # Build notes lookup
+        notes_lookup = {tn.technician_id: tn.note for tn in request.tech_notes}
+        
+        # Group jobs by technician
+        jobs_by_tech = {}
+        for job in scheduled_jobs:
+            tid = job['technician_id']
+            if tid not in jobs_by_tech:
+                jobs_by_tech[tid] = []
+            jobs_by_tech[tid].append(job)
+        
+        # Group time off by technician  
+        timeoff_by_tech = {}
+        for to in time_off:
+            tid = to.get('technician_id')
+            if tid not in timeoff_by_tech:
+                timeoff_by_tech[tid] = []
+            timeoff_by_tech[tid].append(to)
+        
+        sent_count = 0
+        failed = []
+        all_tech_schedules = []
+        week_label = start_date.strftime('%B %d, %Y')
+        
+        for tech_id, tech_jobs in jobs_by_tech.items():
+            tech = tech_lookup.get(tech_id)
+            if not tech:
+                failed.append({"tech_id": tech_id, "error": "Technician not found"})
+                continue
+            
+            tech_name = tech.get('name', f'Tech {tech_id}')
+            tech_email = tech.get('email')
+            tech_time_off = timeoff_by_tech.get(tech_id, [])
+            note = notes_lookup.get(tech_id, '')
+            
+            # Build the HTML for this tech
+            tech_html = build_tech_schedule_html(
+                tech_name, request.week_start, tech_jobs, tech_time_off, note
+            )
+            
+            all_tech_schedules.append({
+                'tech_name': tech_name,
+                'tech_email': tech_email,
+                'html': tech_html
+            })
+            
+            # Send individual email if tech has an email address
+            if tech_email:
+                try:
+                    subject = f"CGRS Schedule - {tech_name} - Week of {week_label}"
+                    cc = [request.cc_email] if request.cc_email else []
+                    send_email(tech_email, subject, tech_html, cc_addrs=cc)
+                    sent_count += 1
+                except Exception as e:
+                    failed.append({"tech_name": tech_name, "email": tech_email, "error": str(e)})
+            else:
+                failed.append({"tech_name": tech_name, "error": "No email address on file"})
+        
+        # Send master schedule email
+        master_sent = False
+        if request.send_master and all_tech_schedules and request.master_recipients:
+            try:
+                master_html = build_master_schedule_html(request.week_start, all_tech_schedules)
+                master_subject = f"CGRS Master Schedule - Week of {week_label}"
+                
+                # Send to first recipient, CC the rest plus Ryan
+                primary = request.master_recipients[0]
+                cc_list = request.master_recipients[1:] + ([request.cc_email] if request.cc_email else [])
+                
+                send_email(primary, master_subject, master_html, cc_addrs=cc_list)
+                master_sent = True
+            except Exception as e:
+                failed.append({"recipient": "master", "error": str(e)})
+        
+        return {
+            "success": True,
+            "sent_count": sent_count,
+            "master_sent": master_sent,
+            "failed": failed,
+            "message": f"Sent {sent_count} individual emails. Master email: {'sent' if master_sent else 'not sent'}."
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Send schedule emails error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/send-test-email")
+async def send_test_email():
+    """Send a test email to verify Gmail SMTP is working."""
+    try:
+        if not GMAIL_APP_PASSWORD:
+            raise HTTPException(status_code=500, detail="Gmail app password not configured")
+        
+        test_html = """
+        <div style="font-family: Arial; padding: 20px;">
+            <h2 style="color: #1e3a5f;">CGRS Scheduler - Test Email</h2>
+            <p>If you're reading this, email sending is working correctly!</p>
+            <p style="color: #666; font-size: 12px;">Sent at: """ + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + """</p>
+        </div>
+        """
+        
+        send_email("ryan@cgrs.com", "CGRS Scheduler - Test Email", test_html)
+
+        return {"success": True, "message": "Test email sent to ryan@cgrs.com"}
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
