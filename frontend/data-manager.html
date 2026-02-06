@@ -658,7 +658,12 @@
     </div>
     <script>
         // API Base URL - adjust for your setup
-        const API_BASE = 'http://localhost:8000';
+        const API_BASE = '';
+
+        function escapeHtml(str) {
+            if (str == null) return '';
+            return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
 
         // Toggle collapsible sections
         function toggleSection(sectionId) {
@@ -777,7 +782,7 @@
             const msgDiv = document.createElement('div');
             msgDiv.className = `validation-message validation-${type}`;
             
-            const icon = type === 'error' ? 'âŒ' : type === 'warning' ? 'âš ï¸' : 'âœ…';
+            const icon = type === 'error' ? '❌' : type === 'warning' ? '⚠️' : '✅';
             msgDiv.innerHTML = `<span>${icon}</span><span>${message}</span>`;
             
             container.appendChild(msgDiv);
@@ -785,9 +790,9 @@
 
         async function processStaging() {
             if (!confirm('Process all jobs in staging to production?\n\n' +
-                'â€¢ New jobs will be INSERTED\n' +
-                'â€¢ Existing non-scheduled jobs will be UPDATED\n' +
-                'â€¢ Scheduled jobs will be SKIPPED (preserved)')) {
+                '• New jobs will be INSERTED\n' +
+                '• Existing non-scheduled jobs will be UPDATED\n' +
+                '• Scheduled jobs will be SKIPPED (preserved)')) {
                 return;
             }
 
@@ -825,16 +830,16 @@
                     container.style.display = 'block';
                     
                     if (result.inserted > 0) {
-                        showValidationMessage(`âœ… ${result.inserted} new jobs inserted`, 'success');
+                        showValidationMessage(`✅ ${result.inserted} new jobs inserted`, 'success');
                     }
                     if (result.updated > 0) {
                         showValidationMessage(`ðŸ”„ ${result.updated} existing jobs updated (sow_1, due_date, etc.)`, 'success');
                     }
                     if (result.skipped_scheduled > 0) {
-                        showValidationMessage(`â­ï¸ ${result.skipped_scheduled} scheduled jobs preserved (not modified)`, 'warning');
+                        showValidationMessage(`⭐️ ${result.skipped_scheduled} scheduled jobs preserved (not modified)`, 'warning');
                     }
                     if (result.errors > 0) {
-                        showValidationMessage(`âŒ ${result.errors} jobs had errors`, 'error');
+                        showValidationMessage(`❌ ${result.errors} jobs had errors`, 'error');
                     }
                     
                     logActivity('Import Processed', result.message || 'Jobs processed', 'Success');
@@ -1101,12 +1106,12 @@
                 tbody.innerHTML = jobs.map(job => `
                     <tr>
                         <td>${job.work_order}</td>
-                        <td><input type="text" value="${job.site_name || ''}" onchange="updateJob(${job.work_order}, 'site_name', this.value)"></td>
-                        <td><input type="text" value="${job.site_city || ''}" onchange="updateJob(${job.work_order}, 'site_city', this.value)"></td>
-                        <td><input type="text" value="${job.site_state || ''}" onchange="updateJob(${job.work_order}, 'site_state', this.value)" style="width: 50px;"></td>
+                        <td><input type="text" value="${escapeHtml(job.site_name)}" onchange="updateJob(${job.work_order}, 'site_name', this.value)"></td>
+                        <td><input type="text" value="${escapeHtml(job.site_city)}" onchange="updateJob(${job.work_order}, 'site_city', this.value)"></td>
+                        <td><input type="text" value="${escapeHtml(job.site_state)}" onchange="updateJob(${job.work_order}, 'site_state', this.value)" style="width: 50px;"></td>
                         <td><input type="date" value="${job.due_date || ''}" onchange="updateJob(${job.work_order}, 'due_date', this.value)"></td>
-                        <td><input type="text" value="${job.sow_1 || ''}" onchange="updateJob(${job.work_order}, 'sow_1', this.value)"></td>
-                        <td>${job.jp_status || 'Call'}</td>
+                        <td><input type="text" value="${escapeHtml(job.sow_1)}" onchange="updateJob(${job.work_order}, 'sow_1', this.value)"></td>
+                        <td>${escapeHtml(job.jp_status) || 'Call'}</td>
                         <td><button onclick="archiveJob(${job.work_order}, true)" style="background: #ef4444; color: white; padding: 2px 8px;">Archive</button></td>
                     </tr>
                 `).join('');

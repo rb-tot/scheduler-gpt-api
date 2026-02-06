@@ -229,51 +229,6 @@
             font-size: 12px;
             margin-left: 8px;
         }
-        /* Monthly Windows panel */
-        .monthly-panel {
-            position: fixed;
-            right: 20px;
-            bottom: 80px;
-            width: 320px;
-            max-height: 50vh;
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-            z-index: 1000;
-            display: none;
-        }
-        .monthly-panel.open {
-            display: block;
-        }
-        .monthly-panel-header {
-            background: #d97706;
-            color: white;
-            padding: 10px 15px;
-            border-radius: 8px 8px 0 0;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .monthly-panel-content {
-            max-height: calc(50vh - 50px);
-            overflow-y: auto;
-            padding: 10px;
-        }
-        .monthly-job {
-            padding: 8px;
-            border: 1px solid #fcd34d;
-            border-radius: 4px;
-            margin-bottom: 8px;
-            cursor: pointer;
-            background: #fffbeb;
-        }
-        .monthly-job:hover {
-            background: #fef3c7;
-        }
-        .monthly-job.overdue {
-            border: 2px solid #ef4444;
-            background: #fef2f2;
-        }
         /* Detail panel */
         .detail-panel {
             position: fixed;
@@ -335,9 +290,9 @@
             <button onclick="loadData()">Load Week</button>
             
             <!-- Date filter for unscheduled jobs -->
-            <span style="margin-left: 15px; color: #ccc;">Jobs Due:</span>
+            <span style="margin-left: 15px; color: #1e3a5f; font-weight: 600;">Jobs Due:</span>
             <input type="date" id="filter-start" style="width: 130px;" />
-            <span style="color: #ccc;">to</span>
+            <span style="color: #1e3a5f;">to</span>
             <input type="date" id="filter-end" style="width: 130px;" />
             <button onclick="loadUnscheduledJobs()" style="background: #10b981;">Filter Jobs</button>
             <span id="unscheduled-count" style="background: #fbbf24; color: #78350f; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold;">0 jobs</span>
@@ -359,32 +314,19 @@
     <!-- Email Modal -->
     <div id="email-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 9999; overflow: auto;">
         <div style="background: white; margin: 20px auto; max-width: 900px; padding: 20px; border-radius: 8px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                <h2 style="margin: 0;">Weekly Schedule Emails</h2>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h2 style="margin: 0;">Weekly Schedule - Individual Tech Emails</h2>
                 <button onclick="closeEmailModal()" style="padding: 5px 15px; background: #6b7280; color: white; border: none; border-radius: 4px; cursor: pointer;">Close</button>
             </div>
-            
-            <!-- Email Controls -->
-            <div style="background: #f3f4f6; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
-                <div style="display: flex; gap: 15px; flex-wrap: wrap; align-items: center; margin-bottom: 10px;">
-                    <label style="font-size: 13px; font-weight: bold;">CC:
-                        <input type="text" id="email-cc" value="ryan@cgrs.com" style="margin-left: 5px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; width: 200px; font-size: 13px;" />
-                    </label>
-                    <label style="font-size: 13px; display: flex; align-items: center; gap: 5px;">
-                        <input type="checkbox" id="email-send-master" checked />
-                        <strong>Send master schedule to:</strong>
-                    </label>
-                    <input type="text" id="email-master-recipients" value="kbaker@cgrs.com, jduggan@cgrs.com" style="padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; width: 280px; font-size: 13px;" />
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 8px 12px; background: #f3f4f6; border-radius: 6px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <label style="font-size: 13px; cursor: pointer;"><input type="checkbox" id="email-select-all" onchange="toggleAllTechEmails(this.checked)" checked> Select All</label>
+                    <span style="color: #666; font-size: 13px;">Check techs to include when copying</span>
+                    <span id="email-changes-badge" style="display: none; background: #fbbf24; color: #78350f; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: bold;">0 changed</span>
                 </div>
-                <div style="display: flex; gap: 10px; align-items: center;">
-                    <button onclick="sendAllScheduleEmails()" id="btn-send-emails" style="padding: 8px 20px; background: #dc2626; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 14px;">📧 Send All Emails</button>
-                    <button onclick="sendTestEmail()" style="padding: 8px 14px; background: #6b7280; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Send Test Email</button>
-                    <span id="email-send-status" style="font-size: 13px; color: #666;"></span>
-                </div>
+                <button onclick="copySelectedTechEmails()" style="padding: 6px 14px; background: #22c55e; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">Copy Selected</button>
             </div>
-            
-            <p style="color: #666; margin-bottom: 15px; font-size: 13px;">Review schedules below. Add notes per tech if needed. Click "Send All Emails" or "Copy" individual schedules.</p>
-            <div id="email-table-container" style="max-height: 60vh; overflow-y: auto;"></div>
+            <div id="email-table-container" style="max-height: 70vh; overflow-y: auto;"></div>
         </div>
     </div>
     
@@ -491,19 +433,6 @@
         </div>
         <div class="urgent-panel-content" id="urgent-list"></div>
     </div>
-    <!-- Monthly Windows toggle button (bottom right) -->
-    <div class="monthly-toggle" onclick="toggleMonthlyPanel()" style="position: fixed; right: 20px; bottom: 20px; background: #d97706; color: white; padding: 10px 15px; border-radius: 8px; cursor: pointer; z-index: 999; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-        Monthly Windows <span id="monthly-count" style="background: #fbbf24; padding: 2px 6px; border-radius: 10px; font-size: 11px; margin-left: 5px;">0</span>
-    </div>
-
-    <!-- Monthly Windows panel -->
-    <div class="monthly-panel" id="monthly-panel">
-        <div class="monthly-panel-header">
-            <span>Monthly Sites (Optimal Window)</span>
-            <span style="cursor: pointer;" onclick="toggleMonthlyPanel()">X</span>
-        </div>
-        <div class="monthly-panel-content" id="monthly-list"></div>
-    </div>
     <!-- Detail panel -->
     <div class="detail-panel" id="detail-panel">
         <h3>
@@ -524,7 +453,10 @@
         let map = null;
         let markers = [];
         let selectedJob = null;
-        
+
+        // Track schedule changes made this session (work_orders that were assigned/moved/unscheduled)
+        let sessionChanges = new Set(); // Stores work_order numbers changed this session
+
         // Tech colors - AVOID green (#22c55e), orange (#f97316), blue triangles for homes
         // These are for MAP markers to show tech routes - DISTINCTLY DIFFERENT colors
         const TECH_COLORS = [
@@ -533,7 +465,7 @@
             '#00ff7f', // fluorescent green
             '#000000', // black
             '#facc15', // dark yellow
-            '#ffffff', // white
+            '#ff6600', // dark orange
             '#14b8a6', // teal
             '#9333ea', // purple
             '#ff69b4', // hot pink
@@ -601,7 +533,7 @@
         function initMap() {
             map = L.map('map').setView([39.5, -105.0], 7);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: 'Â© OpenStreetMap'
+                attribution: '© OpenStreetMap'
             }).addTo(map);
         }
         
@@ -696,7 +628,6 @@
                 renderCalendar();
                 renderMap();
                 renderUrgentJobs();
-                renderMonthlyWindows();
                 
             } catch (error) {
                 console.error('Error loading data:', error);
@@ -924,7 +855,6 @@
             // Refresh map with current data (called after filter changes)
             renderMap();
             renderUrgentJobs();
-            renderMonthlyWindows();
         }
         
         function renderMap() {
@@ -1580,108 +1510,6 @@
             panel.classList.toggle('open');
         }
         
-        function toggleMonthlyPanel() {
-            const panel = document.getElementById('monthly-panel');
-            panel.classList.toggle('open');
-            if (panel.classList.contains('open')) {
-                renderMonthlyWindows();
-            }
-        }
-
-        function renderMonthlyWindows() {
-            if (!currentWeek) {
-                document.getElementById('monthly-list').innerHTML = '<p style="color: #666; padding: 10px;">Select a week first</p>';
-                document.getElementById('monthly-count').textContent = '0';
-                return;
-            }
-            
-            const weekStart = new Date(currentWeek);
-            const weekEnd = new Date(currentWeek);
-            weekEnd.setDate(weekEnd.getDate() + 4); // Friday
-            
-            // Filter MOI jobs that have visit window data
-            const monthlyJobs = unscheduledJobs.filter(job => {
-                // Must be MOI job
-                if (!job.sow_1 || !job.sow_1.includes('MOI')) return false;
-                
-                // Must have visit window in cache
-                const window = visitWindowCache[job.site_id];
-                if (!window || !window.last_visit_date) return false;
-                
-                // Calculate optimal window (20-40 days after last visit)
-                const lastVisit = new Date(window.last_visit_date);
-                const windowStart = new Date(lastVisit);
-                windowStart.setDate(windowStart.getDate() + 20);
-                const windowEnd = new Date(lastVisit);
-                windowEnd.setDate(windowEnd.getDate() + 40);
-                
-                // Check if selected week overlaps with optimal window
-                return weekStart <= windowEnd && weekEnd >= windowStart;
-            }).map(job => {
-                const window = visitWindowCache[job.site_id];
-                const lastVisit = new Date(window.last_visit_date);
-                const windowStart = new Date(lastVisit);
-                windowStart.setDate(windowStart.getDate() + 20);
-                const windowEnd = new Date(lastVisit);
-                windowEnd.setDate(windowEnd.getDate() + 40);
-                
-                const today = new Date();
-                const daysSinceVisit = Math.floor((today - lastVisit) / (1000 * 60 * 60 * 24));
-                const isOverdue = daysSinceVisit > 40;
-                
-                return {
-                    ...job,
-                    lastVisitDate: window.last_visit_date,
-                    windowStart: windowStart.toISOString().split('T')[0],
-                    windowEnd: windowEnd.toISOString().split('T')[0],
-                    daysSinceVisit: daysSinceVisit,
-                    isOverdue: isOverdue
-                };
-            }).sort((a, b) => {
-                return new Date(a.windowEnd) - new Date(b.windowEnd);
-            });
-            
-            document.getElementById('monthly-count').textContent = monthlyJobs.length;
-            
-            let html = '';
-            monthlyJobs.forEach(job => {
-                const overdueClass = job.isOverdue ? 'overdue' : '';
-                const daysLabel = job.isOverdue 
-                    ? `<span style="color: #ef4444; font-weight: bold;">${job.daysSinceVisit} days (OVERDUE)</span>`
-                    : `${job.daysSinceVisit} days ago`;
-                
-                html += `
-                    <div class="monthly-job ${overdueClass}" onclick="selectMonthlyJob(${job.work_order})">
-                        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                            <div style="flex: 1;">
-                                <div style="font-size: 11px; color: #92400e;">Last Visit: ${job.lastVisitDate} (${daysLabel})</div>
-                                <div style="font-weight: bold; margin: 4px 0;">${job.site_name}</div>
-                                <div style="font-size: 11px; color: #666;">${job.region} | ${job.duration}h</div>
-                                <div style="font-size: 11px; color: #d97706; margin-top: 2px;">Window: ${job.windowStart} to ${job.windowEnd}</div>
-                            </div>
-                            <button onclick="event.stopPropagation(); addToSelectedJobs(${job.work_order})" 
-                                style="padding: 4px 8px; background: #f59e0b; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 10px; margin-left: 8px;"
-                                title="Add to Selected">+</button>
-                        </div>
-                    </div>
-                `;
-            });
-            
-            document.getElementById('monthly-list').innerHTML = html || '<p style="color: #666; padding: 10px;">No MOI jobs in optimal window for this week</p>';
-        }
-
-        function selectMonthlyJob(workOrder) {
-            const job = unscheduledJobs.find(j => j.work_order === workOrder);
-            if (!job) return;
-            
-            selectedJob = job;
-            
-            if (job.latitude && job.longitude) {
-                map.setView([job.latitude, job.longitude], 10);
-            }
-            
-            showJobSuggestions(job);
-        }
         function closeDetailPanel() {
             const panel = document.getElementById('detail-panel');
             panel.classList.remove('open');
@@ -3137,6 +2965,7 @@
                     const result = await response.json();
                     if (result.success) {
                         successCount++;
+                        sessionChanges.add(change.work_order);
                     } else {
                         errors.push(`${change.site_name}: ${result.error || 'Unknown error'}`);
                     }
@@ -3238,7 +3067,6 @@
         function generateEmailPreview() {
             const modal = document.getElementById('email-modal');
             const tableContainer = document.getElementById('email-table-container');
-            document.getElementById('email-send-status').textContent = '';
             
             const days = ['mon', 'tue', 'wed', 'thu', 'fri'];
             const dayLabels = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -3287,22 +3115,19 @@
                 // Skip techs with no jobs and no time off
                 if (!hasAnyJobs && !hasTimeOff) return;
                 
-                const techEmail = tech.email || 'No email on file';
-                const emailColor = tech.email ? '#22c55e' : '#dc2626';
-                
+                // Check if this tech has any changed jobs
+                const techChangedJobs = techJobs.flatMap(d => d.jobs).filter(j => sessionChanges.has(j.work_order));
+                const hasChanges = techChangedJobs.length > 0;
+
                 html += `
-                    <div style="border: 2px solid #1e3a5f; border-radius: 8px; overflow: hidden;" id="email-${tech.technician_id}">
+                    <div style="border: 2px solid ${hasChanges ? '#f59e0b' : '#1e3a5f'}; border-radius: 8px; overflow: hidden;" id="email-${tech.technician_id}">
                         <div style="background: #1e3a5f; color: white; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center;">
-                            <div>
-                                <h3 style="margin: 0; display: inline;">${tech.name}</h3>
-                                <span style="margin-left: 10px; font-size: 12px; color: ${emailColor};">${techEmail}</span>
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <input type="checkbox" class="email-tech-checkbox" data-tech-id="${tech.technician_id}" checked style="width: 16px; height: 16px; cursor: pointer;">
+                                <h3 style="margin: 0;">${tech.name} - Week of ${weekDates[0].toLocaleDateString()}</h3>
+                                ${hasChanges ? `<span style="background: #fbbf24; color: #78350f; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: bold;">${techChangedJobs.length} changed</span>` : ''}
                             </div>
                             <button onclick="copyTechEmail(${tech.technician_id})" style="padding: 5px 12px; background: #22c55e; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Copy</button>
-                        </div>
-                        <div style="padding: 8px 15px; background: #fffbeb; border-bottom: 1px solid #ddd;">
-                            <label style="font-size: 12px; font-weight: bold; color: #92400e;">Notes for ${tech.name}:</label>
-                            <textarea id="email-note-${tech.technician_id}" rows="2" placeholder="Add any notes for this tech's schedule (hotel info, special instructions, etc.)" 
-                                style="width: 100%; margin-top: 4px; padding: 6px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; resize: vertical; box-sizing: border-box;"></textarea>
                         </div>
                         <div style="padding: 15px;" id="email-content-${tech.technician_id}">
                             <table style="border-collapse: collapse; width: 100%; font-size: 12px;">
@@ -3338,13 +3163,15 @@
                     } else {
                         dayData.jobs.forEach((job, jobIndex) => {
                             const isFirstJob = jobIndex === 0;
-                            const rowBg = dayIndex % 2 === 0 ? '#ffffff' : '#f9fafb';
-                            
+                            const isChanged = sessionChanges.has(job.work_order);
+                            const rowBg = isChanged ? '#fef9c3' : (dayIndex % 2 === 0 ? '#ffffff' : '#f9fafb');
+
                             html += `
                                 <tr style="background: ${rowBg};">
                                     ${isFirstJob ? `<td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;" rowspan="${dayData.jobs.length}">${dayData.day} ${dayData.date.getMonth()+1}/${dayData.date.getDate()}</td>` : ''}
                                     <td style="padding: 8px; border: 1px solid #ddd;">
                                         <a href="https://connect.cgrs.com/CGRSConnect/WorkOrder/Create?workOrderId=${job.work_order}" target="_blank" style="color: #2563eb; text-decoration: none;">${job.site_name}</a>
+                                        ${isChanged ? ' <span style="background: #f59e0b; color: white; padding: 1px 5px; border-radius: 3px; font-size: 10px; font-weight: bold;">CHANGED</span>' : ''}
                                     </td>
                                     <td style="padding: 8px; border: 1px solid #ddd;">${job.site_address || job.address || ''}</td>
                                     <td style="padding: 8px; border: 1px solid #ddd;">${job.site_city || ''}${job.site_state ? ', ' + job.site_state : ''}</td>
@@ -3365,106 +3192,59 @@
             
             html += '</div>';
             tableContainer.innerHTML = html;
+
+            // Update changes badge
+            const totalChanged = scheduledJobs.filter(j => sessionChanges.has(j.work_order)).length;
+            const badge = document.getElementById('email-changes-badge');
+            if (totalChanged > 0) {
+                badge.style.display = 'inline';
+                badge.textContent = `${totalChanged} changed`;
+            } else {
+                badge.style.display = 'none';
+            }
+
             modal.style.display = 'block';
         }
-        
-        async function sendAllScheduleEmails() {
-            const btn = document.getElementById('btn-send-emails');
-            const status = document.getElementById('email-send-status');
-            
-            // Confirmation
-            const techCount = document.querySelectorAll('[id^="email-note-"]').length;
-            if (!confirm(`Send schedule emails to ${techCount} technicians?\n\nThis will email each tech their individual schedule and send a master schedule to the admin recipients.`)) {
+
+        function toggleAllTechEmails(checked) {
+            document.querySelectorAll('.email-tech-checkbox').forEach(cb => cb.checked = checked);
+        }
+
+        function copySelectedTechEmails() {
+            const selected = document.querySelectorAll('.email-tech-checkbox:checked');
+            if (selected.length === 0) {
+                alert('No technicians selected');
                 return;
             }
-            
-            btn.disabled = true;
-            btn.textContent = '⏳ Sending...';
-            btn.style.background = '#9ca3af';
-            status.textContent = 'Sending emails...';
-            status.style.color = '#2563eb';
-            
-            try {
-                // Collect notes from textareas
-                const techNotes = [];
-                document.querySelectorAll('[id^="email-note-"]').forEach(textarea => {
-                    const techId = parseInt(textarea.id.replace('email-note-', ''));
-                    const note = textarea.value.trim();
-                    if (note) {
-                        techNotes.push({ technician_id: techId, note: note });
-                    }
-                });
-                
-                const ccEmail = document.getElementById('email-cc').value.trim();
-                const sendMaster = document.getElementById('email-send-master').checked;
-                const masterStr = document.getElementById('email-master-recipients').value.trim();
-                const masterRecipients = masterStr ? masterStr.split(',').map(e => e.trim()).filter(e => e) : [];
-                
-                const weekStart = currentWeek.toISOString().split('T')[0];
-                
-                const response = await fetch(`/api/send-schedule-emails`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        week_start: weekStart,
-                        tech_notes: techNotes,
-                        cc_email: ccEmail,
-                        send_master: sendMaster,
-                        master_recipients: masterRecipients
-                    })
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    let msg = `✅ ${result.sent_count} emails sent.`;
-                    if (result.master_sent) msg += ' Master schedule sent.';
-                    if (result.failed && result.failed.length > 0) {
-                        msg += ` ⚠️ ${result.failed.length} failed.`;
-                        console.log('Failed emails:', result.failed);
-                    }
-                    status.textContent = msg;
-                    status.style.color = '#16a34a';
-                    btn.textContent = '✅ Sent!';
-                    btn.style.background = '#16a34a';
-                } else {
-                    status.textContent = `❌ ${result.message || 'Failed to send'}`;
-                    status.style.color = '#dc2626';
-                    btn.textContent = '📧 Send All Emails';
-                    btn.style.background = '#dc2626';
-                    btn.disabled = false;
+
+            // Create a temporary container with only selected techs' content
+            const tempDiv = document.createElement('div');
+            selected.forEach(cb => {
+                const techId = cb.dataset.techId;
+                const content = document.getElementById(`email-content-${techId}`);
+                if (content) {
+                    const clone = content.cloneNode(true);
+                    tempDiv.appendChild(clone);
                 }
-            } catch (err) {
-                console.error('Email send error:', err);
-                status.textContent = `❌ Error: ${err.message}`;
-                status.style.color = '#dc2626';
-                btn.textContent = '📧 Send All Emails';
-                btn.style.background = '#dc2626';
-                btn.disabled = false;
-            }
-            
-            // Re-enable button after 5 seconds to prevent accidental double-send
-            setTimeout(() => {
-                btn.disabled = false;
-                btn.textContent = '📧 Send All Emails';
-                btn.style.background = '#dc2626';
-            }, 5000);
-        }
-        
-        async function sendTestEmail() {
+            });
+
+            document.body.appendChild(tempDiv);
+            const range = document.createRange();
+            range.selectNode(tempDiv);
+            window.getSelection().removeAllRanges();
+            window.getSelection().addRange(range);
+
             try {
-                const response = await fetch(`/api/send-test-email`, { method: 'POST' });
-                const result = await response.json();
-                if (result.success) {
-                    alert('Test email sent to ryan@cgrs.com - check your inbox!');
-                } else {
-                    alert('Failed: ' + (result.detail || result.message));
-                }
+                document.execCommand('copy');
+                alert(`Copied ${selected.length} tech schedule(s) to clipboard!`);
             } catch (err) {
-                alert('Error sending test email: ' + err.message);
+                alert('Failed to copy. Please select and copy manually.');
             }
+
+            window.getSelection().removeAllRanges();
+            document.body.removeChild(tempDiv);
         }
-        
+
         function copyTechEmail(techId) {
             const content = document.getElementById(`email-content-${techId}`);
             if (!content) {

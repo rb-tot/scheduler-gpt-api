@@ -539,13 +539,13 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h2 id="modal-title">Add New Technician</h2>
-                <button class="close-btn" onclick="closeTechModal()">X</button>
+                <button class="close-btn" onclick="closeTechModal()">&times;</button>
             </div>
 
             <form id="tech-form" onsubmit="saveTechnician(event)">
                 <!-- Basic Info Section -->
                 <div class="form-section">
-                    <h3> Basic Information</h3>
+                    <h3>Basic Information</h3>
                     <div class="form-grid">
                         <div class="form-group">
                             <label for="tech-name">Full Name *</label>
@@ -572,12 +572,12 @@
 
                 <!-- Location Section -->
                 <div class="form-section">
-                    <h3> Home Location</h3>
+                    <h3>Home Location</h3>
                     <div class="form-group full-width">
                         <label>City and State *</label>
                         <div class="city-lookup">
                             <input type="text" id="home-location" required placeholder="Denver, CO">
-                            <button type="button" class="btn btn-primary" onclick="lookupCityCoords()"> 📋 Lookup Coordinates</button>
+                            <button type="button" class="btn btn-primary" onclick="lookupCityCoords()">Lookup Coordinates</button>
                         </div>
                         <div id="coords-display" class="coords-display" style="display: none;">
                             <strong>Coordinates:</strong> <span id="coords-text"></span>
@@ -589,7 +589,7 @@
 
                 <!-- Qualifications Section -->
                 <div class="form-section">
-                    <h3> Qualifications (SOW Types)</h3>
+                    <h3>Qualifications (SOW Types)</h3>
                     <div class="checkbox-group" id="qualifications-checkboxes">
                         <!-- Will be populated dynamically -->
                     </div>
@@ -597,7 +597,7 @@
 
                 <!-- States Section -->
                 <div class="form-section">
-                    <h3> States Allowed</h3>
+                    <h3>States Allowed</h3>
                     <div class="state-selector" id="states-selector">
                         <!-- Will be populated dynamically -->
                     </div>
@@ -606,7 +606,7 @@
                 <!-- Form Actions -->
                 <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
                     <button type="button" class="btn btn-secondary" onclick="closeTechModal()">Cancel</button>
-                    <button type="submit" class="btn btn-success"> Save Technician</button>
+                    <button type="submit" class="btn btn-success">Save Technician</button>
                 </div>
             </form>
         </div>
@@ -617,16 +617,16 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h2 id="timeoff-title">Manage Time Off</h2>
-                <button class="close-btn" onclick="closeTimeOffModal()">X</button>
+                <button class="close-btn" onclick="closeTimeOffModal()">×</button>
             </div>
 
             <div class="calendar-controls">
                 <div class="month-nav">
-                    <button class="btn btn-secondary" onclick="changeMonth(-1)">< Prev</button>
+                    <button class="btn btn-secondary" onclick="changeMonth(-1)">&larr; Prev</button>
                     <h3 id="calendar-month-year">January 2025</h3>
-                    <button class="btn btn-secondary" onclick="changeMonth(1)">Next ></button>
+                    <button class="btn btn-secondary" onclick="changeMonth(1)">Next &rarr;</button>
                 </div>
-                <button class="btn btn-primary" onclick="saveTimeOff()"> Save Changes</button>
+                <button class="btn btn-primary" onclick="saveTimeOff()">Save Changes</button>
             </div>
 
             <div class="timeoff-calendar" id="timeoff-calendar">
@@ -646,14 +646,14 @@
     <!-- ADD THIS MAP SECTION -->
     <div class="container" style="margin-top: 20px;">
         <div class="header">
-            <h2> Technician Service Areas (100-mile radius)</h2>
+            <h2>Technician Service Areas (100-mile radius)</h2>
         </div>
         <div id="techMap" style="height: 500px; width: 100%; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);"></div>
     </div>
     <script>
         // Configuration
-        const API_BASE = 'http://localhost:8000'; // Update this to your backend URL
-        const API_KEY = 'your-api-key-here'; // Update this
+        const API_BASE = '';
+        const API_KEY = '';
 
         // State
         let technicians = [];
@@ -1200,7 +1200,7 @@
             
             // Add map tiles
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '(c) OpenStreetMap contributors'
+                attribution: '© OpenStreetMap contributors'
             }).addTo(map);
             
             // Colors for different technicians
