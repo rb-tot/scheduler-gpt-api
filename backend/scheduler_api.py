@@ -2926,6 +2926,7 @@ class SendScheduleEmailRequest(BaseModel):
     cc_email: str = "ryan@cgrs.com"
     send_master: bool = True
     master_recipients: List[str] = ["kbaker@cgrs.com", "jduggan@cgrs.com"]
+    selected_tech_ids: Optional[List[int]] = None  # If provided, only send to these techs
 
 
 def build_tech_schedule_html(tech_name: str, week_start: str, jobs: list, time_off: list, note: str = "") -> str:
@@ -3128,11 +3129,15 @@ async def send_schedule_emails(request: SendScheduleEmailRequest):
         week_label = start_date.strftime('%B %d, %Y')
         
         for tech_id, tech_jobs in jobs_by_tech.items():
+            # Skip if not in selected list (when selection is provided)
+            if request.selected_tech_ids and tech_id not in request.selected_tech_ids:
+                continue
+
             tech = tech_lookup.get(tech_id)
             if not tech:
                 failed.append({"tech_id": tech_id, "error": "Technician not found"})
                 continue
-            
+
             tech_name = tech.get('name', f'Tech {tech_id}')
             tech_email = tech.get('email')
             tech_time_off = timeoff_by_tech.get(tech_id, [])
