@@ -325,13 +325,13 @@
                     <label style="font-size: 13px; cursor: pointer;"><input type="checkbox" id="email-select-all" onchange="toggleAllTechEmails(this.checked)" checked> Select All</label>
                     <span id="email-changes-badge" style="display: none; background: #fbbf24; color: #78350f; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: bold;">0 changed</span>
                     <label style="font-size: 13px; font-weight: bold;">CC:
-                        <input type="text" id="email-cc" value="ryan@cgrs.com" style="margin-left: 5px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; width: 200px; font-size: 13px;" />
+                        <input type="text" id="email-cc" value="rbell@cgrs.com, jdugan@cgrs.com" style="margin-left: 5px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; width: 280px; font-size: 13px;" />
                     </label>
                     <label style="font-size: 13px; display: flex; align-items: center; gap: 5px;">
                         <input type="checkbox" id="email-send-master" checked />
                         <strong>Send master schedule to:</strong>
                     </label>
-                    <input type="text" id="email-master-recipients" value="kbaker@cgrs.com, jduggan@cgrs.com" style="padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; width: 280px; font-size: 13px;" />
+                    <input type="text" id="email-master-recipients" value="kbaker@cgrs.com, rsimms@cgrs.com" style="padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; width: 280px; font-size: 13px;" />
                 </div>
                 <div style="display: flex; gap: 10px; align-items: center;">
                     <button onclick="sendAllScheduleEmails()" id="btn-send-emails" style="padding: 8px 20px; background: #dc2626; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 14px;">Send Selected Emails</button>
@@ -3269,7 +3269,8 @@
                     }
                 });
 
-                const ccEmail = document.getElementById('email-cc').value.trim();
+                const ccStr = document.getElementById('email-cc').value.trim();
+                const ccEmails = ccStr ? ccStr.split(',').map(e => e.trim()).filter(e => e) : [];
                 const sendMaster = document.getElementById('email-send-master').checked;
                 const masterStr = document.getElementById('email-master-recipients').value.trim();
                 const masterRecipients = masterStr ? masterStr.split(',').map(e => e.trim()).filter(e => e) : [];
@@ -3282,7 +3283,7 @@
                     body: JSON.stringify({
                         week_start: weekStart,
                         tech_notes: techNotes,
-                        cc_email: ccEmail,
+                        cc_emails: ccEmails,
                         send_master: sendMaster,
                         master_recipients: masterRecipients,
                         selected_tech_ids: selectedTechIds
@@ -3331,7 +3332,7 @@
                 const response = await fetch(`/api/send-test-email`, { method: 'POST' });
                 const result = await response.json();
                 if (result.success) {
-                    alert('Test email sent to ryan@cgrs.com - check your inbox!');
+                    alert('Test email sent to rbell@cgrs.com - check your inbox!');
                 } else {
                     alert('Failed: ' + (result.detail || result.message));
                 }
