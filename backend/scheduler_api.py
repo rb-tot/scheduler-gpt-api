@@ -3328,8 +3328,154 @@ def api_get_nearby_annuals(
     except Exception as e:
         logger.error(f"Error getting nearby annuals: {e}", exc_info=True)
         raise HTTPException(500, str(e))
+# ============================================================================
+# GPS ROUTE EXPORT
+# ============================================================================
+
+class GPSExportRequest(BaseModel):
+    week_start: str  # YYYY-MM-DD (Monday of the week)
+    technician_ids: Optional[List[int]] = None  # None = all techs
 
 
+@app.get("/api/export/gps-routes/{week_start}")
+async def export_gps_routes(
+    week_start: str,
+    technician_id: Optional[int] = Query(None)
+):
+    """
+    Export scheduled jobs as GPS routes for Samsara.
+    One route per tech for the whole week. Samsara optimizes the actual routing.
+    """
+    try:
+        import csv
+        from io import StringIO
+        from fastapi.responses import Response
+        
+        sb = supabase_client()
+        
+        # Parse week start
+        start_date = datetime.strptime(week_start, "%Y-%m-%d").date()
+        end_date = start_date + timedelta(days=4)  # Mon-Fri
+        
+        # Get scheduled jobs with technician info
+        query = sb.table('scheduled_jobs')\
+            .select('*, technicians!Scheduled_Jobs_assigned_tech_id_fkey(name, gps_username)')\
+            .gte('date', str(start_date))\
+            .lte('date', str(end_date))\
+            .order('technician_id')\
+            .order('date')\
+            .order('start_time')
+        
+        if technician_id:
+            query = query.eq('technician_id', technician_id)
+        
+        result = query.execute()
+        
+        if not result.data:
+            return {"success": False, "message": "No scheduled jobs found for this week"}
+        
+        # Group jobs by technician (one route per tech for the week)
+        routes = {}
+        for job in result.data:
+            tech_info = job.get('technicians', {})
+            tech_id = job.get('technician_id')
+            
+            if tech_id not in routes:
+                routes[tech_id] = {
+                    'tech_name': tech_info.get('name', 'Unknown'),
+                    'gps_username': tech_info.get('gps_username', ''),
+                    'jobs': []
+                }
+            routes[tech_id]['jobs'].append(job)
+        
+        # Build CSV
+        output = StringIO()
+        writer = csv.writer(output)
+        
+        # Header row
+        writer.writerow([
+            'Route Name', 'Assigned Driver Username', 'Assigned Vehicle Name',
+            'Stop Name', 'Stop Arrival Time', 'Stop Departure Time', 'Stop Notes',
+            'Address Name', 'Latitude', 'Longitude', 'Full Address'
+        ])
+        
+        # Format week for route name (e.g., "02-09")
+        week_label = start_date.strftime("%m-%d")
+        
+        # Process each tech's route
+        for tech_id, route_data in routes.items():
+            tech_name = route_data['tech_name']
+            gps_username = route_data['gps_username']
+            jobs = route_data['jobs']
+            
+            # Route name: "FirstName_Week_02-09"
+            first_name = tech_name.split()[0] if tech_name else 'Unknown'
+            route_name = f"{first_name}_Week_{week_label}"
+            
+            # Process stops - just need placeholder times for Samsara upload
+            for i, job in enumerate(jobs):
+                stop_num = i + 1
+                job_date = job.get('date', str(start_date))
+                
+                # Build full address
+                addr_parts = [
+                    job.get('site_address', ''),
+                    job.get('site_city', ''),
+                    job.get('site_state', '')
+                ]
+                full_address = ', '.join(p for p in addr_parts if p)
+                
+                # Parse job date for timestamp
+                job_date_obj = datetime.strptime(job_date, "%Y-%m-%d")
+                
+                # Placeholder time: 8am + stop number (just needs to be chronological)
+                placeholder_hour = 8 + (i % 10)  # Wrap around if more than 10 stops
+                time_str = f"{job_date_obj.month}/{job_date_obj.day}/{job_date_obj.strftime('%y')} {placeholder_hour}:00"
+                
+                # First stop: departure time required, arrival blank
+                # Other stops: arrival time required
+                if i == 0:
+                    arrival_str = ''
+                    departure_str = time_str
+                else:
+                    arrival_str = time_str
+                    departure_str = ''
+                
+                # Notes: date, SOW, duration
+                day_name = job_date_obj.strftime("%a")
+                duration = job.get('duration', '')
+                sow = job.get('sow_1', '')
+                notes = f"{day_name}: {sow} ({duration}h)" if duration else f"{day_name}: {sow}"
+                
+                writer.writerow([
+                    route_name,
+                    gps_username,
+                    '',
+                    f"Stop {stop_num}",
+                    arrival_str,
+                    departure_str,
+                    notes,
+                    job.get('site_name', ''),
+                    job.get('latitude', ''),
+                    job.get('longitude', ''),
+                    full_address
+                ])
+        
+        csv_content = output.getvalue()
+        output.close()
+        
+        filename = f"gps_routes_{week_start}.csv"
+        return Response(
+            content=csv_content,
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+        
+    except Exception as e:
+        logger.error(f"GPS export error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, str(e))
 # ============================================================================
 # RUN
 # ============================================================================

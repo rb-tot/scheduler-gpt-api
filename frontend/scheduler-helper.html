@@ -298,6 +298,7 @@
             <span id="unscheduled-count" style="background: #fbbf24; color: #78350f; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold;">0 jobs</span>
             
             <button onclick="exportScheduleCSV()" style="background: #22c55e; margin-left: 10px;">Export CSV</button>
+            <button onclick="exportGPSRoutes()" style="background: #8b5cf6; margin-left: 5px;">📍 Export GPS</button>
             <button onclick="generateEmailPreview()" style="background: #3b82f6; margin-left: 5px;">Email Preview</button>
         </div>
     </div>
@@ -3079,7 +3080,18 @@
             a.download = `schedule_${new Date().toISOString().split('T')[0]}.csv`;
             a.click();
         }
-        
+        function exportGPSRoutes() {
+            if (!currentWeek) {
+                alert('Please select a week first');
+                return;
+            }
+            
+            const weekStart = currentWeek.toISOString().split('T')[0];
+            
+            // Direct download via GET request
+            const url = `/api/export/gps-routes/${weekStart}`;
+            window.open(url, '_blank');
+        }
         function generateEmailPreview() {
             const modal = document.getElementById('email-modal');
             const tableContainer = document.getElementById('email-table-container');
