@@ -2923,9 +2923,9 @@ class TechEmailNote(BaseModel):
 class SendScheduleEmailRequest(BaseModel):
     week_start: str  # YYYY-MM-DD
     tech_notes: List[TechEmailNote] = []
-    cc_email: str = "ryan@cgrs.com"
+    cc_emails: List[str] = ["rbell@cgrs.com", "jdugan@cgrs.com"]
     send_master: bool = True
-    master_recipients: List[str] = ["kbaker@cgrs.com", "jduggan@cgrs.com"]
+    master_recipients: List[str] = ["kbaker@cgrs.com", "rsimms@cgrs.com"]
     selected_tech_ids: Optional[List[int]] = None  # If provided, only send to these techs
 
 
@@ -3158,7 +3158,7 @@ async def send_schedule_emails(request: SendScheduleEmailRequest):
             if tech_email:
                 try:
                     subject = f"CGRS Schedule - {tech_name} - Week of {week_label}"
-                    cc = [request.cc_email] if request.cc_email else []
+                    cc = [e for e in request.cc_emails if e] if request.cc_emails else []
                     send_email(tech_email, subject, tech_html, cc_addrs=cc)
                     sent_count += 1
                 except Exception as e:
@@ -3173,9 +3173,9 @@ async def send_schedule_emails(request: SendScheduleEmailRequest):
                 master_html = build_master_schedule_html(request.week_start, all_tech_schedules)
                 master_subject = f"CGRS Master Schedule - Week of {week_label}"
                 
-                # Send to first recipient, CC the rest plus Ryan
+                # Send to first recipient, CC the rest plus cc_emails
                 primary = request.master_recipients[0]
-                cc_list = request.master_recipients[1:] + ([request.cc_email] if request.cc_email else [])
+                cc_list = request.master_recipients[1:] + ([e for e in request.cc_emails if e] if request.cc_emails else [])
                 
                 send_email(primary, master_subject, master_html, cc_addrs=cc_list)
                 master_sent = True
@@ -3214,9 +3214,9 @@ async def send_test_email():
         </div>
         """
         
-        send_email("ryan@cgrs.com", "CGRS Scheduler - Test Email", test_html)
+        send_email("rbell@cgrs.com", "CGRS Scheduler - Test Email", test_html)
 
-        return {"success": True, "message": "Test email sent to ryan@cgrs.com"}
+        return {"success": True, "message": "Test email sent to rbell@cgrs.com"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
